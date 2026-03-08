@@ -21,7 +21,8 @@
         "NSPhotoLibraryAddUsageDescription": "Bylit saves receipts and reports to your photo library.",
         "NSUserNotificationUsageDescription": "Bylit sends reminders for upcoming bills, budgets, and borrow/lend due dates.",
         "NSCalendarsUsageDescription": "Bylit can add payment due dates to your calendar.",
-        "NSRemindersUsageDescription": "Bylit can create reminders for upcoming bills and loan due dates."
+        "NSRemindersUsageDescription": "Bylit can create reminders for upcoming bills and loan due dates.",
+        "NSContactsUsageDescription": "Bylit accesses your contacts to quickly add payees for borrow/lend transactions."
       }
     },
     "android": {
@@ -38,6 +39,9 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_CONTACTS",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.SCHEDULE_EXACT_ALARM",
