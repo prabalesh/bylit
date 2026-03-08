@@ -2,7 +2,28 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Repository } from '../services/repository';
 import { Transaction, Account, Category, Settings, Budget, SplitBill, SplitParticipant, Subscription } from '../types/api';
 import { Alert } from 'react-native';
-import * as Notifications from 'expo-notifications';
+// expo-notifications is not available in Expo Go (SDK 53+).
+// We lazy-load it so a missing/unavailable native module doesn't crash the app.
+let Notifications: typeof import('expo-notifications') | null = null;
+try {
+    Notifications = require('expo-notifications');
+} catch {
+    // Silently ignore – running in Expo Go without notification support.
+}
+
+const safeSchedule = async (options: Parameters<typeof import('expo-notifications').scheduleNotificationAsync>[0], identifier?: string) => {
+    if (!Notifications) return;
+    try {
+        await Notifications.scheduleNotificationAsync({ ...options, identifier } as any);
+    } catch { /* ignore */ }
+};
+
+const safeCancel = async (identifier: string) => {
+    if (!Notifications) return;
+    try {
+        await Notifications.cancelScheduledNotificationAsync(identifier);
+    } catch { /* ignore */ }
+};
 
 // --- Transactions ---
 export const useTransactions = (startDate?: Date, endDate?: Date, accountId?: string) => {
@@ -179,8 +200,9 @@ export const useMarkParticipantPaid = () => {
 const scheduleSubscriptionReminder = async (sub: Partial<Subscription>, title: string) => {
     if (!sub.id || !sub.nextDueDate) return;
 
+    const notifId = `sub-${sub.id}`;
     // First cancel any existing reminder for this sub
-    await Notifications.cancelScheduledNotificationAsync(`sub - ${sub.id} `);
+    await safeCancel(notifId);
 
     const dueDate = new Date(sub.nextDueDate);
     const reminderDays = sub.reminderDays || 0;
@@ -192,18 +214,17 @@ const scheduleSubscriptionReminder = async (sub: Partial<Subscription>, title: s
 
     // Only schedule if it's in the future
     if (triggerDate > new Date()) {
-        await Notifications.scheduleNotificationAsync({
-            identifier: `sub - ${sub.id} `,
+        await safeSchedule({
             content: {
-                title: `Upcoming Autopay: ${title} `,
+                title: `Upcoming Autopay: ${title}`,
                 body: `Your payment of ${sub.amount} for ${title} is due on ${dueDate.toLocaleDateString()}.`,
                 data: { route: '/(app)/subscriptions' },
             },
             trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                type: 'date' as any,
                 date: triggerDate,
             },
-        });
+        }, notifId);
     }
 };
 
@@ -232,7 +253,7 @@ export const useDeleteSubscription = () => {
     return useMutation({
         mutationFn: async (id: string) => {
             await Repository.deleteSubscription(id);
-            await Notifications.cancelScheduledNotificationAsync(`sub - ${id} `);
+            await safeCancel(`sub-${id}`);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['subscriptions'] });

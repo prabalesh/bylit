@@ -417,7 +417,9 @@ export class Repository {
             accountId: row.account_id,
             categoryId: row.category_id,
             type: row.type,
+            subscriptionType: row.subscription_type || 'other',
             frequency: row.frequency,
+            time: row.time || '09:00',
             startDate: row.start_date,
             nextDueDate: row.next_due_date,
             reminderDays: row.reminder_days,
@@ -433,8 +435,8 @@ export class Repository {
 
         await db.runAsync(
             `INSERT OR REPLACE INTO subscriptions
-            (id, title, amount, account_id, category_id, type, frequency, start_date, next_due_date, reminder_days, last_processed_date, sync_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, title, amount, account_id, category_id, type, subscription_type, frequency, time, start_date, next_due_date, reminder_days, last_processed_date, sync_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 sub.title || '',
@@ -442,7 +444,9 @@ export class Repository {
                 sub.accountId || '',
                 sub.categoryId || null,
                 sub.type || 'expense',
+                sub.subscriptionType || 'other',
                 sub.frequency || 'monthly',
+                sub.time || '09:00',
                 sub.startDate || new Date().toISOString(),
                 sub.nextDueDate || new Date().toISOString(),
                 sub.reminderDays || 0,

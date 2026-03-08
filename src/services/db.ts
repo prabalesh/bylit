@@ -85,7 +85,9 @@ export const initDB = async () => {
             account_id TEXT NOT NULL,
             category_id TEXT,
             type TEXT NOT NULL,
+            subscription_type TEXT NOT NULL DEFAULT 'other',
             frequency TEXT NOT NULL,
+            time TEXT NOT NULL DEFAULT '09:00',
             start_date TEXT NOT NULL,
             next_due_date TEXT NOT NULL,
             reminder_days INTEGER NOT NULL DEFAULT 0,
@@ -101,6 +103,8 @@ export const initDB = async () => {
         `ALTER TABLE settings ADD COLUMN reminder_hour INTEGER NOT NULL DEFAULT 20`,
         `ALTER TABLE settings ADD COLUMN reminder_minute INTEGER NOT NULL DEFAULT 0`,
         `ALTER TABLE transactions ADD COLUMN to_account_id TEXT`,
+        `ALTER TABLE subscriptions ADD COLUMN subscription_type TEXT NOT NULL DEFAULT 'other'`,
+        `ALTER TABLE subscriptions ADD COLUMN time TEXT NOT NULL DEFAULT '09:00'`,
     ];
     for (const stmt of migrateColumns) {
         try { await db.execAsync(stmt); } catch { /* column already exists */ }

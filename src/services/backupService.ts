@@ -1,4 +1,4 @@
-import { documentDirectory, EncodingType, writeAsStringAsync, readAsStringAsync } from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Repository } from './repository';
@@ -18,9 +18,9 @@ export class BackupService {
 
             const jsonContent = JSON.stringify(data, null, 2);
             const fileName = `bylit_backup_${new Date().toISOString().split('T')[0]}.json`;
-            const fileUri = (documentDirectory || '') + fileName;
+            const fileUri = (FileSystem.documentDirectory || '') + fileName;
 
-            await writeAsStringAsync(fileUri, jsonContent, { encoding: EncodingType.UTF8 });
+            await FileSystem.writeAsStringAsync(fileUri, jsonContent, { encoding: FileSystem.EncodingType.UTF8 });
             await Sharing.shareAsync(fileUri);
         } catch (error) {
             console.error('JSON Export failed:', error);
@@ -37,7 +37,7 @@ export class BackupService {
 
             if (result.canceled) return false;
 
-            const content = await readAsStringAsync(result.assets[0].uri);
+            const content = await FileSystem.readAsStringAsync(result.assets[0].uri);
             const data = JSON.parse(content);
 
             // Basic validation

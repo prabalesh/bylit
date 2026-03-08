@@ -1,14 +1,36 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Platform } from 'react-native';
-import { useState } from 'react';
-import { Plus, ArrowDownLeft, ArrowUpRight, TrendingUp, Filter, Clock, CheckCircle2 } from 'lucide-react-native';
+import { useState, useMemo } from 'react';
+import {
+    Plus, ArrowDownLeft, ArrowUpRight, Clock, CheckCircle2, RepeatIcon,
+    Wallet, Sparkles, Heart, CalendarClock, Smartphone, CreditCard, Shield,
+    Home, Briefcase, TrendingUp, Zap, Tv, GraduationCap, MoreHorizontal
+} from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
-import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
+import { FONT, ICON, RADIUS } from '../../src/constants/Sizes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSubscriptions, useCategories, useAccounts, useSettings, useSaveTransaction, useUpdateSubscriptionLastProcessed } from '../../src/hooks/useData';
 import { getCurrencySymbol } from '../../src/constants/Currency';
 import SubscriptionModal from '../../src/components/SubscriptionModal';
-import { Subscription } from '../../src/types/api';
+import { Subscription, SubscriptionType } from '../../src/types/api';
+
+const TYPE_META: Record<SubscriptionType, { icon: React.ComponentType<any>; color: string }> = {
+    app_subscription: { icon: Smartphone, color: '#6366F1' },
+    loan_emi: { icon: CreditCard, color: '#EF4444' },
+    insurance: { icon: Shield, color: '#F59E0B' },
+    rent: { icon: Home, color: '#8B5CF6' },
+    utility: { icon: Zap, color: '#06B6D4' },
+    entertainment: { icon: Tv, color: '#EC4899' },
+    education: { icon: GraduationCap, color: '#10B981' },
+    salary: { icon: Briefcase, color: '#22C55E' },
+    investment: { icon: TrendingUp, color: '#84CC16' },
+    other: { icon: MoreHorizontal, color: '#9CA3AF' },
+};
+
+const FREQ_LABEL: Record<string, string> = {
+    daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly',
+};
 
 export default function SubscriptionsScreen() {
     const insets = useSafeAreaInsets();
@@ -26,6 +48,20 @@ export default function SubscriptionsScreen() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
 
+    const summary = useMemo(() => {
+        const monthlyTotal = subscriptions
+            .filter(s => s.type === 'expense')
+            .reduce((acc, s) => {
+                if (s.frequency === 'daily') return acc + s.amount * 30;
+                if (s.frequency === 'weekly') return acc + s.amount * 4.33;
+                if (s.frequency === 'monthly') return acc + s.amount;
+                if (s.frequency === 'yearly') return acc + s.amount / 12;
+                return acc;
+            }, 0);
+        const dueCount = subscriptions.filter(s => isDue(s.nextDueDate)).length;
+        return { monthlyTotal, dueCount, total: subscriptions.length };
+    }, [subscriptions]);
+
     const getNextBillingDate = (dateStr: string, frequency: string) => {
         const d = new Date(dateStr);
         if (frequency === 'daily') d.setDate(d.getDate() + 1);
@@ -35,14 +71,9 @@ export default function SubscriptionsScreen() {
         return d.toISOString();
     };
 
-    const isDue = (nextDueDateStr: string) => {
-        const nextDue = new Date(nextDueDateStr);
-        const now = new Date();
-        return nextDue <= now;
-    };
+    const isDue = (nextDueDateStr: string) => new Date(nextDueDateStr) <= new Date();
 
     const handleConfirmPayment = async (sub: Subscription) => {
-        // Log transaction
         await saveTransaction.mutateAsync({
             accountId: sub.accountId,
             categoryId: sub.categoryId,
@@ -51,14 +82,11 @@ export default function SubscriptionsScreen() {
             date: sub.nextDueDate,
             description: `Autopay: ${sub.title}`
         });
-
-        // Advance next due date
         const newNextDue = getNextBillingDate(sub.nextDueDate, sub.frequency);
-        const processedDate = new Date().toISOString();
         await updateSubscriptionLastProcessed.mutateAsync({
             id: sub.id,
             nextDueDate: newNextDue,
-            lastProcessedDate: processedDate,
+            lastProcessedDate: new Date().toISOString(),
         });
     };
 
@@ -66,50 +94,73 @@ export default function SubscriptionsScreen() {
         const isExpense = item.type === 'expense';
         const color = isExpense ? activeColors.error : activeColors.success;
         const due = isDue(item.nextDueDate);
+        const cat = categories.find(c => c.id === item.categoryId);
+        const account = accounts.find(a => a.id === item.accountId);
+        const typeMeta = TYPE_META[item.subscriptionType || 'other'] ?? TYPE_META.other;
+        const TypeIcon = typeMeta.icon;
 
         return (
             <TouchableOpacity
-                style={[styles.card, due && { borderColor: activeColors.notification }]}
-                onPress={() => {
-                    setSelectedSub(item);
-                    setIsModalVisible(true);
-                }}
+                style={[styles.card, due && { borderColor: activeColors.notification, borderWidth: 1.5 }]}
+                onPress={() => { setSelectedSub(item); setIsModalVisible(true); }}
+                activeOpacity={0.8}
             >
-                <View style={styles.cardHeader}>
-                    <View style={styles.cardLeft}>
-                        <View style={[styles.iconContainer, { backgroundColor: color + '15' }]}>
-                            {isExpense ? <ArrowUpRight color={color} size={18} /> : <ArrowDownLeft color={color} size={18} />}
+                <View style={styles.cardRow}>
+                    {/* Type Icon Avatar */}
+                    <View style={[styles.avatar, { backgroundColor: typeMeta.color + '18' }]}>
+                        <TypeIcon color={typeMeta.color} size={20} />
+                    </View>
+
+                    {/* Info */}
+                    <View style={styles.cardInfo}>
+                        <View style={styles.cardTitleRow}>
+                            <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+                            {due && (
+                                <View style={[styles.dueBadge, { backgroundColor: activeColors.notification + '18' }]}>
+                                    <Clock size={10} color={activeColors.notification} />
+                                    <Text style={[styles.dueBadgeText, { color: activeColors.notification }]}>DUE</Text>
+                                </View>
+                            )}
                         </View>
-                        <View>
-                            <Text style={styles.title}>{item.title}</Text>
-                            <Text style={styles.subText}>{item.frequency} • {accounts.find(a => a.id === item.accountId)?.name || 'Unknown Account'}</Text>
+                        <View style={styles.cardMeta}>
+                            {cat && (
+                                <View style={[styles.catChip, { backgroundColor: (cat.colorHex || activeColors.tint) + '20' }]}>
+                                    <View style={[styles.catDot, { backgroundColor: cat.colorHex || activeColors.tint }]} />
+                                    <Text style={[styles.catChipText, { color: cat.colorHex || activeColors.tint }]}>{cat.name}</Text>
+                                </View>
+                            )}
+                            <View style={styles.freqChip}>
+                                <RepeatIcon size={9} color={activeColors.secondaryText} />
+                                <Text style={styles.freqChipText}>{FREQ_LABEL[item.frequency]}</Text>
+                            </View>
+                        </View>
+                        <View style={styles.cardFooter}>
+                            <Wallet size={10} color={activeColors.secondaryText} />
+                            <Text style={styles.accountText} numberOfLines={1}>{account?.name || '—'}</Text>
+                            <Text style={styles.dotSep}>·</Text>
+                            <CalendarClock size={10} color={activeColors.secondaryText} />
+                            <Text style={styles.accountText}>
+                                {new Date(item.nextDueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                            </Text>
                         </View>
                     </View>
-                    <View style={{ alignItems: 'flex-end' }}>
+
+                    {/* Amount */}
+                    <View style={styles.cardRight}>
                         <Text style={[styles.amount, { color }]}>
                             {isExpense ? '-' : '+'}{symbol}{item.amount.toLocaleString()}
                         </Text>
-                        <Text style={styles.dueText}>
-                            Due: {new Date(item.nextDueDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </Text>
+                        {due && (
+                            <TouchableOpacity
+                                style={[styles.confirmBtn, { backgroundColor: activeColors.success }]}
+                                onPress={() => handleConfirmPayment(item)}
+                            >
+                                <CheckCircle2 size={12} color="#fff" />
+                                <Text style={styles.confirmBtnText}>Paid</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
-
-                {due && (
-                    <View style={styles.actionRow}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Clock size={ICON.sm} color={activeColors.notification} />
-                            <Text style={[styles.dueBadgeText, { color: activeColors.notification }]}>Payment is Due</Text>
-                        </View>
-                        <TouchableOpacity
-                            style={[styles.confirmBtn, { backgroundColor: activeColors.success }]}
-                            onPress={() => handleConfirmPayment(item)}
-                        >
-                            <CheckCircle2 size={ICON.sm} color="#fff" />
-                            <Text style={styles.confirmBtnText}>Confirm</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
             </TouchableOpacity>
         );
     };
@@ -118,13 +169,45 @@ export default function SubscriptionsScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <View>
-                    <Text style={styles.headerTitle}>Autopay & Subscriptions</Text>
-                    <Text style={styles.headerSubtitle}>Manage recurring payments</Text>
+            {/* Header */}
+            <View style={styles.headerArea}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.headerTitle}>Autopay</Text>
+                    {currentTheme === 'heart' && <Heart color={activeColors.tint} size={20} fill={activeColors.tint} />}
                 </View>
+                <Text style={styles.headerSub}>Recurring payments</Text>
             </View>
 
+            {/* Summary Card */}
+            <View style={styles.summaryWrap}>
+                <LinearGradient
+                    colors={[activeColors.tint, activeColors.tint + 'CC']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.summaryCard}
+                >
+                    <Sparkles color="rgba(255,255,255,0.5)" size={18} style={styles.summaryIcon} />
+                    <View>
+                        <Text style={styles.summaryLabel}>EST. MONTHLY SPEND</Text>
+                        <Text style={styles.summaryAmount}>{symbol}{Math.round(summary.monthlyTotal).toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.summaryDivider} />
+                    <View style={styles.summaryStats}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statValue}>{summary.total}</Text>
+                            <Text style={styles.statLabel}>Active</Text>
+                        </View>
+                        <View style={[styles.statItem, summary.dueCount > 0 && { opacity: 1 }]}>
+                            <Text style={[styles.statValue, summary.dueCount > 0 && { color: '#FFE57A' }]}>
+                                {summary.dueCount}
+                            </Text>
+                            <Text style={styles.statLabel}>Due</Text>
+                        </View>
+                    </View>
+                </LinearGradient>
+            </View>
+
+            {/* List */}
             <FlatList
                 data={subscriptions}
                 keyExtractor={(item) => item.id}
@@ -134,20 +217,20 @@ export default function SubscriptionsScreen() {
                 refreshControl={<RefreshControl refreshing={isRefetching || isLoading} onRefresh={refetch} tintColor={activeColors.tint} />}
                 ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
+                        <RepeatIcon size={40} color={activeColors.border} />
                         <Text style={styles.emptyText}>No recurring payments yet</Text>
-                        <Text style={styles.emptySub}>Set up autopay to track your subscriptions</Text>
+                        <Text style={styles.emptySub}>Tap + to add your first autopay</Text>
                     </View>
                 )}
             />
 
+            {/* FAB */}
             <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => {
-                    setSelectedSub(null);
-                    setIsModalVisible(true);
-                }}
+                style={[styles.fab, { backgroundColor: activeColors.tint }]}
+                onPress={() => { setSelectedSub(null); setIsModalVisible(true); }}
+                activeOpacity={0.85}
             >
-                <Plus color="#ffffff" size={32} />
+                <Plus color="#fff" size={28} strokeWidth={2.5} />
             </TouchableOpacity>
 
             <SubscriptionModal
@@ -161,24 +244,84 @@ export default function SubscriptionsScreen() {
 
 const getStyles = (colors: any, insets: any) => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? insets.top : 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
-    headerTitle: { fontSize: FONT.h1, fontWeight: '900', color: colors.text },
-    headerSubtitle: { fontSize: FONT.xs, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 },
-    listContent: { padding: 20, paddingBottom: 100 },
-    card: { backgroundColor: colors.card, padding: 16, borderRadius: RADIUS.xl, marginBottom: 16, borderWidth: 1, borderColor: colors.border },
-    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-    cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 16 },
-    iconContainer: { width: 44, height: 44, borderRadius: RADIUS.lg, justifyContent: 'center', alignItems: 'center' },
-    title: { fontSize: FONT.body, fontWeight: '800', color: colors.text },
-    subText: { fontSize: FONT.xs, fontWeight: '600', color: colors.secondaryText, textTransform: 'capitalize', marginTop: 4 },
-    amount: { fontSize: 18, fontWeight: '900' },
-    dueText: { fontSize: FONT.xs, fontWeight: '700', color: colors.secondaryText, marginTop: 4 },
-    actionRow: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    dueBadgeText: { fontSize: FONT.sm, fontWeight: '800' },
-    confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: RADIUS.pill },
-    confirmBtnText: { color: '#fff', fontSize: FONT.sm, fontWeight: '800' },
-    emptyContainer: { padding: 40, alignItems: 'center' },
-    emptyText: { fontSize: FONT.body, fontWeight: '900', color: colors.text },
-    emptySub: { fontSize: FONT.xs, fontWeight: '600', color: colors.secondaryText, marginTop: 4 },
-    addButton: { position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, backgroundColor: colors.tint, borderRadius: 20, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: colors.tint, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12 },
+    headerArea: {
+        paddingHorizontal: 20,
+        paddingTop: Platform.OS === 'ios' ? insets.top : 16,
+        paddingBottom: 8,
+    },
+    headerTitle: { fontSize: 28, fontWeight: '900', color: colors.text, letterSpacing: -0.5 },
+    headerSub: { fontSize: FONT.xs, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
+
+    summaryWrap: { paddingHorizontal: 20, paddingBottom: 12 },
+    summaryCard: {
+        borderRadius: RADIUS.xl,
+        padding: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+        elevation: 6,
+        shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+    },
+    summaryIcon: { position: 'absolute', top: 14, right: 14 },
+    summaryLabel: { fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase', letterSpacing: 1 },
+    summaryAmount: { fontSize: 26, fontWeight: '900', color: '#fff', marginTop: 2 },
+    summaryDivider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.25)', marginHorizontal: 4 },
+    summaryStats: { gap: 10 },
+    statItem: { alignItems: 'center' },
+    statValue: { fontSize: 18, fontWeight: '900', color: '#fff' },
+    statLabel: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase' },
+
+    listContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
+
+    card: {
+        backgroundColor: colors.card,
+        borderRadius: RADIUS.xl,
+        marginBottom: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    avatar: {
+        width: 46, height: 46, borderRadius: 14,
+        justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+    },
+    avatarText: { fontSize: 15, fontWeight: '900' },
+    cardInfo: { flex: 1, gap: 4 },
+    cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    cardTitle: { fontSize: FONT.body, fontWeight: '800', color: colors.text, flex: 1 },
+    dueBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+    dueBadgeText: { fontSize: 8, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+    cardMeta: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+    catChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
+    catDot: { width: 5, height: 5, borderRadius: 3 },
+    catChipText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+    freqChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.border + '40' },
+    freqChipText: { fontSize: 9, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.3 },
+    cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    accountText: { fontSize: FONT.xs, color: colors.secondaryText, fontWeight: '600' },
+    dotSep: { color: colors.border, fontWeight: '900' },
+
+    cardRight: { alignItems: 'flex-end', gap: 8, flexShrink: 0 },
+    amount: { fontSize: 16, fontWeight: '900' },
+    confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+    confirmBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+    emptyContainer: { paddingTop: 60, alignItems: 'center', gap: 10 },
+    emptyText: { fontSize: FONT.body, fontWeight: '900', color: colors.text, marginTop: 8 },
+    emptySub: { fontSize: FONT.xs, fontWeight: '600', color: colors.secondaryText },
+
+    fab: {
+        position: 'absolute', bottom: 24, right: 24,
+        width: 56, height: 56, borderRadius: 20,
+        justifyContent: 'center', alignItems: 'center',
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+    },
 });

@@ -74,7 +74,19 @@ export interface SplitParticipant {
     paid: boolean;
 }
 
-export type Frequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type Frequency = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export type SubscriptionType =
+    | 'app_subscription'
+    | 'loan_emi'
+    | 'insurance'
+    | 'rent'
+    | 'salary'
+    | 'investment'
+    | 'utility'
+    | 'entertainment'
+    | 'education'
+    | 'other';
 
 export interface Subscription {
     id: string;
@@ -83,9 +95,11 @@ export interface Subscription {
     accountId: string;
     categoryId?: string;
     type: 'income' | 'expense';
+    subscriptionType: SubscriptionType;
     frequency: Frequency;
+    time: string; // HH:MM for the scheduled time of day (or hour for hourly)
     startDate: string; // ISO
-    nextDueDate: string; // ISO 
+    nextDueDate: string; // ISO
     reminderDays: number; // 0 = on day, 1 = 1 day before
     lastProcessedDate?: string; // ISO
 }

@@ -18,7 +18,7 @@ import { getCurrencySymbol } from '../../src/constants/Currency';
 import SplitBillModal from '../../src/components/SplitBillModal';
 import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
 import * as Sharing from 'expo-sharing';
-import { documentDirectory, writeAsStringAsync } from 'expo-file-system/legacy';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useConfirm } from '../../src/providers/ConfirmProvider';
 import { useToast } from '../../src/providers/ToastProvider';
 
@@ -83,8 +83,8 @@ export default function SplitBillsScreen() {
             .map(p => `"${p.name}","${p.phone || ''}",${p.share},"${p.paid ? 'Paid' : 'Pending'}"`)
             .join('\n');
         const csvContent = `Title,${bill.title}\nDate,${bill.date}\nCategory,${bill.category || ''}\nTotal,${bill.totalAmount}\n\n${csvHeader}${csvRows}`;
-        const fileUri = `${documentDirectory}split_${bill.id}.csv`;
-        await writeAsStringAsync(fileUri, csvContent, { encoding: 'utf8' });
+        const fileUri = `${FileSystem.documentDirectory}split_${bill.id}.csv`;
+        await FileSystem.writeAsStringAsync(fileUri, csvContent, { encoding: 'utf8' });
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
             await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: `${bill.title} — Report` });
@@ -148,10 +148,10 @@ export default function SplitBillsScreen() {
                 {/* Bill List */}
                 <View style={styles.listSection}>
                     <Text style={styles.listSectionTitle}>All Bills ({splitBills.length})</Text>
-                    {splitBills.map(bill => {
-                        const unpaidCount = bill.participants.filter(p => !p.paid).length;
+                    {splitBills.map((bill: SplitBill) => {
+                        const unpaidCount = bill.participants.filter((p: SplitParticipant) => !p.paid).length;
                         const isExpanded = expandedBillId === bill.id;
-                        const unpaidTotal = bill.participants.filter(p => !p.paid).reduce((s, p) => s + p.share, 0);
+                        const unpaidTotal = bill.participants.filter((p: SplitParticipant) => !p.paid).reduce((s: number, p: SplitParticipant) => s + p.share, 0);
                         return (
                             <View key={bill.id} style={styles.card}>
                                 {/* Card Header */}
@@ -194,7 +194,7 @@ export default function SplitBillsScreen() {
                                         ) : null}
 
                                         {/* Participants */}
-                                        {bill.participants.map(p => (
+                                        {bill.participants.map((p: SplitParticipant) => (
                                             <TouchableOpacity
                                                 key={p.id}
                                                 style={styles.participantRow}

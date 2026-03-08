@@ -57,7 +57,7 @@ export default function AppLayout() {
                 <Tabs.Screen
                     name="index"
                     options={{
-                        title: 'Transactions',
+                        title: 'Home',
                         tabBarIcon: ({ color }) => <Home color={color} size={24} />,
                     }}
                 />
@@ -66,20 +66,6 @@ export default function AppLayout() {
                     options={{
                         title: 'Analytics',
                         tabBarIcon: ({ color }) => <PieChart color={color} size={24} />,
-                    }}
-                />
-                <Tabs.Screen
-                    name="budgets"
-                    options={{
-                        title: 'Budgets',
-                        tabBarIcon: ({ color }) => <Target color={color} size={24} />,
-                    }}
-                />
-                <Tabs.Screen
-                    name="categories"
-                    options={{
-                        title: 'Categories',
-                        tabBarIcon: ({ color }) => <LayoutGrid color={color} size={24} />,
                     }}
                 />
                 <Tabs.Screen
@@ -96,21 +82,12 @@ export default function AppLayout() {
                         tabBarIcon: ({ color }) => <ArrowLeftRight color={color} size={24} />,
                     }}
                 />
-                <Tabs.Screen
-                    name="split-bills"
-                    options={{
-                        title: 'Split Bills',
-                        tabBarIcon: ({ color }) => <Receipt color={color} size={24} />,
-                        href: null,
-                    }}
-                />
-                <Tabs.Screen
-                    name="settings"
-                    options={{
-                        title: "Settings",
-                        href: null,
-                    }}
-                />
+                {/* Hidden from tab bar — accessible via sidebar / quick actions */}
+                <Tabs.Screen name="budgets" options={{ href: null }} />
+                <Tabs.Screen name="categories" options={{ href: null }} />
+                <Tabs.Screen name="split-bills" options={{ href: null }} />
+                <Tabs.Screen name="subscriptions" options={{ href: null }} />
+                <Tabs.Screen name="settings" options={{ href: null }} />
             </Tabs>
 
             <Modal

@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView, Modal, Pressable, Platform } from 'react-native';
 import { useState, useMemo } from 'react';
-import { Plus, ArrowDownLeft, ArrowUpRight, Filter, Calendar, ChevronDown, LayoutGrid, Heart, Flower, UserCheck, ArrowLeftRight, Wallet, Receipt, Repeat } from 'lucide-react-native';
+import { Plus, ArrowDownLeft, ArrowUpRight, Filter, Calendar, ChevronDown, LayoutGrid, Heart, Flower, UserCheck, ArrowLeftRight, Wallet, Receipt, Repeat, Target, Settings2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import TransactionModal from '../../src/components/TransactionModal';
 import { Transaction } from '../../src/types/api';
@@ -117,54 +117,54 @@ export default function TransactionsScreen() {
                 </ScrollView>
 
                 {/* Quick Actions */}
-                <View style={styles.quickActionsRow}>
-                    <TouchableOpacity
-                        style={styles.quickActionCard}
-                        onPress={() => router.push('/(app)/split-bills')}
-                    >
-                        <View style={[styles.quickActionIcon, { backgroundColor: activeColors.notification + '15' }]}>
-                            <Receipt color={activeColors.notification} size={ICON.md} />
-                        </View>
-                        <Text style={styles.quickActionLabel}>Split Bills</Text>
-                        <Text style={styles.quickActionSub}>Share expenses</Text>
-                    </TouchableOpacity>
+                <View style={styles.quickActionsSection}>
+                    <View style={styles.quickActionsGrid}>
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(app)/split-bills')}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: activeColors.notification + '15' }]}>
+                                <Receipt color={activeColors.notification} size={ICON.md} />
+                            </View>
+                            <Text style={styles.quickActionLabel}>Split Bills</Text>
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.quickActionCard}
-                        onPress={() => router.push('/(app)/subscriptions')}
-                    >
-                        <View style={[styles.quickActionIcon, { backgroundColor: activeColors.warning + '15' }]}>
-                            <Repeat color={activeColors.warning} size={ICON.md} />
-                        </View>
-                        <Text style={styles.quickActionLabel}>Autopay</Text>
-                        <Text style={styles.quickActionSub}>Track recurring</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(app)/subscriptions')}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: activeColors.warning + '15' }]}>
+                                <Repeat color={activeColors.warning} size={ICON.md} />
+                            </View>
+                            <Text style={styles.quickActionLabel}>Autopay</Text>
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.quickActionCard}
-                        onPress={() => {
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(app)/budgets')}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: activeColors.success + '15' }]}>
+                                <Target color={activeColors.success} size={ICON.md} />
+                            </View>
+                            <Text style={styles.quickActionLabel}>Budgets</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(app)/categories')}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: activeColors.tint + '15' }]}>
+                                <LayoutGrid color={activeColors.tint} size={ICON.md} />
+                            </View>
+                            <Text style={styles.quickActionLabel}>Categories</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => {
                             setSelectedTransaction(null);
                             setInitialTransactionType('transfer');
                             setIsModalVisible(true);
-                        }}
-                    >
-                        <View style={[styles.quickActionIcon, { backgroundColor: activeColors.tint + '15' }]}>
-                            <ArrowLeftRight color={activeColors.tint} size={ICON.md} />
-                        </View>
-                        <Text style={styles.quickActionLabel}>Self Transfer</Text>
-                        <Text style={styles.quickActionSub}>Move between accounts</Text>
-                    </TouchableOpacity>
+                        }}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: '#8B5CF615' }]}>
+                                <ArrowLeftRight color="#8B5CF6" size={ICON.md} />
+                            </View>
+                            <Text style={styles.quickActionLabel}>Transfer</Text>
+                        </TouchableOpacity>
 
-                    <TouchableOpacity
-                        style={styles.quickActionCard}
-                        onPress={() => router.push('/(app)/accounts')}
-                    >
-                        <View style={[styles.quickActionIcon, { backgroundColor: activeColors.success + '15' }]}>
-                            <Wallet color={activeColors.success} size={ICON.md} />
-                        </View>
-                        <Text style={styles.quickActionLabel}>Accounts</Text>
-                        <Text style={styles.quickActionSub}>Manage your wallets</Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity style={styles.quickActionCard} onPress={() => router.push('/(app)/settings')}>
+                            <View style={[styles.quickActionIcon, { backgroundColor: activeColors.secondaryText + '15' }]}>
+                                <Settings2 color={activeColors.secondaryText} size={ICON.md} />
+                            </View>
+                            <Text style={styles.quickActionLabel}>Settings</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* Transitions List */}
@@ -333,9 +333,10 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     accountOptionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     accountOptionText: { fontSize: 14, fontWeight: '700', color: colors.text },
     accountBalanceText: { fontSize: 12, color: colors.secondaryText, fontWeight: '600' },
-    quickActionsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginBottom: 16 },
+    quickActionsSection: { paddingHorizontal: 20, marginBottom: 16 },
+    quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     quickActionCard: {
-        flex: 1,
+        width: '30.5%',
         backgroundColor: colors.card,
         borderRadius: 20,
         borderWidth: 1,
@@ -345,13 +346,13 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         gap: 6,
     },
     quickActionIcon: {
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         borderRadius: 14,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 2,
     },
-    quickActionLabel: { fontSize: 13, fontWeight: '800', color: colors.text, textAlign: 'center' },
+    quickActionLabel: { fontSize: 12, fontWeight: '800', color: colors.text, textAlign: 'center' },
     quickActionSub: { fontSize: 10, fontWeight: '600', color: colors.secondaryText, textAlign: 'center' },
 });
