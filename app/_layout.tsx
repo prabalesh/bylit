@@ -1,12 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, LogBox } from 'react-native';
 import { Providers } from '../src/providers/providers';
 import { ThemeProvider, useTheme } from '../src/providers/ThemeContext';
 import { ToastProvider } from '../src/providers/ToastProvider';
 import { Colors } from '../src/constants/Colors';
 import { AppWalkthrough } from '../src/components/AppWalkthrough';
+import { Logger } from '../src/services/logger';
+
+// Catch uncaught JS errors
+const originalHandler = ErrorUtils.getGlobalHandler();
+ErrorUtils.setGlobalHandler((error, isFatal) => {
+    Logger.logError(error, `Is Fatal: ${isFatal}`);
+    if (originalHandler) {
+        originalHandler(error, isFatal);
+    }
+});
+
+import BylitLoadingScreen from '../src/components/BylitLoadingScreen';
 
 const MainLayout = () => {
     const { currentTheme } = useTheme();
@@ -15,15 +27,11 @@ const MainLayout = () => {
 
     useEffect(() => {
         // Simple delay to ensure providers are initialized if needed
-        setIsReady(true);
+        setTimeout(() => setIsReady(true), 1500); // Give splash some time to breathe
     }, []);
 
     if (!isReady) {
-        return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: activeColors.background }}>
-                <ActivityIndicator size="large" color={activeColors.tint} />
-            </View>
-        );
+        return <BylitLoadingScreen />;
     }
 
     return (
@@ -43,11 +51,7 @@ export default function RootLayout() {
     return (
         <SafeAreaProvider>
             <Providers>
-                <ThemeProvider>
-                    <ToastProvider>
-                        <MainLayout />
-                    </ToastProvider>
-                </ThemeProvider>
+                <MainLayout />
             </Providers>
         </SafeAreaProvider>
     );

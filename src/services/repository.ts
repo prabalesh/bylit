@@ -1,5 +1,5 @@
 import { getDB } from './db';
-import { Transaction, Account, Category, Settings, Budget, SplitBill, SplitParticipant, Subscription } from '../types/api';
+import { Transaction, Account, Category, Settings, Budget, SplitBill, SplitParticipant, Subscription, Frequency } from '../types/api';
 
 const generateId = () => Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
 
@@ -9,12 +9,12 @@ export class Repository {
         const db = getDB();
         const results = await db.getAllAsync<any>('SELECT * FROM accounts WHERE sync_status != "deleted"');
         return results.map((row: any) => ({
-            id: row.id,
-            name: row.name,
-            type: row.type,
-            balance: row.balance,
-            createdAt: row.updated_at,
-            updatedAt: row.updated_at
+            id: String(row.id),
+            name: String(row.name),
+            type: (row.type || 'Bank') as any,
+            balance: Number(row.balance) || 0,
+            createdAt: String(row.updated_at || new Date().toISOString()),
+            updatedAt: String(row.updated_at || new Date().toISOString())
         }));
     }
 
@@ -52,20 +52,20 @@ export class Repository {
 
     private static mapRowToTransaction(row: any): Transaction {
         return {
-            id: row.id,
-            accountId: row.account_id,
-            toAccountId: row.to_account_id,
-            categoryId: row.category_id,
-            amount: row.amount,
-            currency: row.currency,
-            type: row.type,
-            description: row.description,
-            date: row.date,
-            personName: row.person_name,
-            dueDate: row.due_date,
+            id: String(row.id || ''),
+            accountId: String(row.account_id || ''),
+            toAccountId: row.to_account_id ? String(row.to_account_id) : undefined,
+            categoryId: row.category_id ? String(row.category_id) : undefined,
+            amount: Number(row.amount) || 0,
+            currency: String(row.currency || 'INR'),
+            type: (row.type || 'expense') as any,
+            description: String(row.description || ''),
+            date: String(row.date || new Date().toISOString()),
+            personName: row.person_name ? String(row.person_name) : undefined,
+            dueDate: row.due_date ? String(row.due_date) : undefined,
             settledStatus: row.settled_status === 1,
-            createdAt: row.updated_at,
-            updatedAt: row.updated_at
+            createdAt: String(row.updated_at || new Date().toISOString()),
+            updatedAt: String(row.updated_at || new Date().toISOString())
         };
     }
 
@@ -256,15 +256,17 @@ export class Repository {
         const settings = await db.getFirstAsync<any>('SELECT * FROM settings');
         if (!settings) return null;
         return {
-            id: settings.id,
-            baseCurrency: settings.base_currency,
-            fontSize: settings.font_size,
-            iconSize: settings.icon_size,
+            id: String(settings.id),
+            userId: String(settings.remote_id || ''),
+            baseCurrency: String(settings.base_currency || 'INR'),
+            fontSize: String(settings.font_size || 'medium'),
+            iconSize: String(settings.icon_size || 'medium'),
             reminderEnabled: settings.reminder_enabled === 1,
-            reminderHour: settings.reminder_hour ?? 20,
-            reminderMinute: settings.reminder_minute ?? 0,
-            updatedAt: settings.updated_at
-        } as any;
+            reminderHour: Number(settings.reminder_hour ?? 20),
+            reminderMinute: Number(settings.reminder_minute ?? 0),
+            createdAt: String(settings.updated_at || new Date().toISOString()),
+            updatedAt: String(settings.updated_at || new Date().toISOString())
+        } as Settings;
     }
 
     static async saveSettings(settings: Partial<Settings>): Promise<void> {
@@ -411,32 +413,33 @@ export class Repository {
         const db = getDB();
         const results = await db.getAllAsync<any>('SELECT * FROM subscriptions WHERE sync_status != "deleted" ORDER BY start_date DESC');
         return results.map(row => ({
-            id: row.id,
-            title: row.title,
-            amount: row.amount,
-            accountId: row.account_id,
-            categoryId: row.category_id,
-            type: row.type,
-            subscriptionType: row.subscription_type || 'other',
-            frequency: row.frequency,
-            time: row.time || '09:00',
-            startDate: row.start_date,
-            nextDueDate: row.next_due_date,
-            reminderDays: row.reminder_days,
-            lastProcessedDate: row.last_processed_date,
-            createdAt: row.updated_at,
-            updatedAt: row.updated_at
+            id: String(row.id || ''),
+            title: String(row.title || 'Untitled'),
+            amount: Number(row.amount) || 0,
+            accountId: String(row.account_id || ''),
+            categoryId: row.category_id ? String(row.category_id) : undefined,
+            type: (row.type === 'income' ? 'income' : 'expense') as 'income' | 'expense',
+            subscriptionType: (row.subscription_type || 'other') as any,
+            frequency: (row.frequency || 'monthly') as any,
+            time: String(row.time || '09:00'),
+            startDate: String(row.start_date || new Date().toISOString()),
+            nextDueDate: String(row.next_due_date || new Date().toISOString()),
+            reminderDays: Number(row.reminder_days) || 0,
+            lastProcessedDate: row.last_processed_date ? String(row.last_processed_date) : undefined,
+            isEstimated: row.is_estimated === 1,
+            createdAt: String(row.updated_at || new Date().toISOString()),
+            updatedAt: String(row.updated_at || new Date().toISOString())
         }));
     }
 
-    static async saveSubscription(sub: Partial<Subscription>): Promise<void> {
+    static async saveSubscription(sub: Partial<Subscription>): Promise<string> {
         const db = getDB();
         const id = sub.id || generateId();
 
         await db.runAsync(
             `INSERT OR REPLACE INTO subscriptions
-            (id, title, amount, account_id, category_id, type, subscription_type, frequency, time, start_date, next_due_date, reminder_days, last_processed_date, sync_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, title, amount, account_id, category_id, type, subscription_type, frequency, time, start_date, next_due_date, reminder_days, last_processed_date, is_estimated, sync_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 sub.title || '',
@@ -451,9 +454,11 @@ export class Repository {
                 sub.nextDueDate || new Date().toISOString(),
                 sub.reminderDays || 0,
                 sub.lastProcessedDate || null,
+                sub.isEstimated ? 1 : 0,
                 'synced'
             ]
         );
+        return id;
     }
 
     static async deleteSubscription(id: string): Promise<void> {
@@ -467,5 +472,28 @@ export class Repository {
             `UPDATE subscriptions SET next_due_date = ?, last_processed_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
             [nextDueDate, lastProcessedDate, id]
         );
+    }
+
+
+    static calculateNextDueDate(currentDueDate: string, frequency: Frequency): string {
+        const date = new Date(currentDueDate);
+        switch (frequency) {
+            case 'hourly':
+                date.setHours(date.getHours() + 1);
+                break;
+            case 'daily':
+                date.setDate(date.getDate() + 1);
+                break;
+            case 'weekly':
+                date.setDate(date.getDate() + 7);
+                break;
+            case 'monthly':
+                date.setMonth(date.getMonth() + 1);
+                break;
+            case 'yearly':
+                date.setFullYear(date.getFullYear() + 1);
+                break;
+        }
+        return date.toISOString();
     }
 }

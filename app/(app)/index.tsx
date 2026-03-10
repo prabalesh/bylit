@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView, Modal, Pressable, Platform } from 'react-native';
-import { useState, useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { Plus, ArrowDownLeft, ArrowUpRight, Filter, Calendar, ChevronDown, LayoutGrid, Heart, Flower, UserCheck, ArrowLeftRight, Wallet, Receipt, Repeat, Target, Settings2 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import TransactionModal from '../../src/components/TransactionModal';
@@ -9,10 +9,12 @@ import { useTheme } from '../../src/providers/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getCurrencySymbol } from '../../src/constants/Currency';
-import { useTransactions, useAccounts, useSettings } from '../../src/hooks/useData';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
-import { useEffect } from 'react';
+import { useTransactions, useAccounts, useSettings, useDueSubscriptions, useProcessSubscriptionPayment } from '../../src/hooks/useData';
+import { Subscription } from '../../src/types/api';
+import { Alert, TextInput } from 'react-native';
+import { Check, Edit3, X as XIcon } from 'lucide-react-native';
 import * as Linking from 'expo-linking';
 
 export default function TransactionsScreen() {
@@ -115,6 +117,10 @@ export default function TransactionsScreen() {
                         </Text>
                     </TouchableOpacity>
                 </ScrollView>
+
+
+                <DueAutopaySection activeColors={activeColors} symbol={symbol} />
+
 
                 {/* Quick Actions */}
                 <View style={styles.quickActionsSection}>
@@ -355,4 +361,135 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     },
     quickActionLabel: { fontSize: 12, fontWeight: '800', color: colors.text, textAlign: 'center' },
     quickActionSub: { fontSize: 10, fontWeight: '600', color: colors.secondaryText, textAlign: 'center' },
+    dueSection: { paddingHorizontal: 20, marginBottom: 20 },
+    dueTitle: { fontSize: 10, fontWeight: '800', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
+    dueCard: {
+        backgroundColor: colors.card,
+        borderRadius: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.warning + '40',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    dueInfo: { flex: 1, marginRight: 12 },
+    dueName: { fontSize: 14, fontWeight: '800', color: colors.text },
+    dueDetail: { fontSize: 12, fontWeight: '600', color: colors.secondaryText, marginTop: 2 },
+    dueAmount: { color: colors.warning, fontWeight: '900' },
+    dueActions: { flexDirection: 'row', gap: 8 },
+    completeBtn: {
+        backgroundColor: colors.success + '15',
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: colors.success + '30',
+    },
+    confirmModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    confirmContent: { backgroundColor: colors.card, width: '100%', borderRadius: 28, padding: 24, borderWidth: 1, borderColor: colors.border },
+    confirmTitle: { fontSize: 18, fontWeight: '900', color: colors.text, marginBottom: 8 },
+    confirmBody: { fontSize: 14, color: colors.secondaryText, fontWeight: '600', marginBottom: 20 },
+    amountInputContainer: { marginBottom: 20 },
+    amountLabel: { fontSize: 10, fontWeight: '800', color: colors.secondaryText, textTransform: 'uppercase', marginBottom: 8 },
+    amountInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: 16, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border },
+    amountPrefix: { fontSize: 16, fontWeight: '900', color: colors.text, marginRight: 4 },
+    amountInput: { flex: 1, height: 48, fontSize: 16, fontWeight: '900', color: colors.text },
+    confirmActions: { flexDirection: 'row', gap: 12 },
+    cancelBtn: { flex: 1, height: 48, borderRadius: 16, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+    cancelBtnText: { fontSize: 14, fontWeight: '800', color: colors.secondaryText },
+    confirmBtn: { flex: 1, height: 48, borderRadius: 16, backgroundColor: colors.success, justifyContent: 'center', alignItems: 'center' },
+    confirmBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
 });
+
+function DueAutopaySection({ activeColors, symbol }: { activeColors: any, symbol: string }) {
+    const { data: dueSubs = [] } = useDueSubscriptions();
+    const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
+    const [amount, setAmount] = useState('');
+    const processPayment = useProcessSubscriptionPayment();
+
+    if (dueSubs.length === 0) return null;
+
+    const handleCompletePress = (sub: Subscription) => {
+        setSelectedSub(sub);
+        setAmount(sub.amount.toString());
+    };
+
+    const handleConfirm = async () => {
+        if (!selectedSub) return;
+        const finalAmount = parseFloat(amount);
+        if (isNaN(finalAmount)) {
+            Alert.alert('Error', 'Please enter a valid amount');
+            return;
+        }
+
+        try {
+            await processPayment.mutateAsync({ subscription: selectedSub, actualAmount: finalAmount });
+            setSelectedSub(null);
+        } catch (e) {
+            Alert.alert('Error', 'Failed to process payment');
+        }
+    };
+
+    const styles = getStyles(activeColors, { top: 0 }); // Temporary hack for insets inside helper
+
+    return (
+        <View style={styles.dueSection}>
+            <Text style={styles.dueTitle}>Due Autopayments</Text>
+            {dueSubs.map(sub => (
+                <View key={sub.id} style={styles.dueCard}>
+                    <View style={styles.dueInfo}>
+                        <Text style={styles.dueName}>{sub.title}</Text>
+                        <Text style={styles.dueDetail}>
+                            Due {new Date(sub.nextDueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })} • <Text style={styles.dueAmount}>{symbol}{sub.amount.toLocaleString()}</Text>
+                        </Text>
+                    </View>
+                    <View style={styles.dueActions}>
+                        <TouchableOpacity style={styles.completeBtn} onPress={() => handleCompletePress(sub)}>
+                            <Check color={activeColors.success} size={20} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            ))}
+
+            <Modal visible={!!selectedSub} transparent animationType="fade" onRequestClose={() => setSelectedSub(null)}>
+                <View style={styles.confirmModalOverlay}>
+                    <View style={styles.confirmContent}>
+                        <Text style={styles.confirmTitle}>Complete Transaction?</Text>
+                        <Text style={styles.confirmBody}>Mark "{selectedSub?.title}" as paid for this period?</Text>
+
+                        <View style={styles.amountInputContainer}>
+                            <Text style={styles.amountLabel}>Update Amount (optional)</Text>
+                            <View style={styles.amountInputWrapper}>
+                                <Text style={styles.amountPrefix}>{symbol}</Text>
+                                <TextInput
+                                    style={styles.amountInput}
+                                    value={amount}
+                                    onChangeText={setAmount}
+                                    keyboardType="numeric"
+                                    placeholder="0.00"
+                                />
+                            </View>
+                        </View>
+
+                        <View style={styles.confirmActions}>
+                            <TouchableOpacity style={styles.cancelBtn} onPress={() => setSelectedSub(null)}>
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.confirmBtn}
+                                onPress={handleConfirm}
+                                disabled={processPayment.isPending}
+                            >
+                                <Text style={styles.confirmBtnText}>{processPayment.isPending ? 'Processing...' : 'Complete'}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </View>
+    );
+}

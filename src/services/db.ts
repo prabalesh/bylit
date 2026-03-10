@@ -19,7 +19,6 @@ export const initDB = async () => {
             reminder_enabled INTEGER NOT NULL DEFAULT 0,
             reminder_hour INTEGER NOT NULL DEFAULT 20,
             reminder_minute INTEGER NOT NULL DEFAULT 0,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced' -- 'synced', 'pending'
         );
 
@@ -92,9 +91,22 @@ export const initDB = async () => {
             next_due_date TEXT NOT NULL,
             reminder_days INTEGER NOT NULL DEFAULT 0,
             last_processed_date TEXT,
+            is_estimated INTEGER NOT NULL DEFAULT 0,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
+
+        CREATE TABLE IF NOT EXISTS budgets (
+            id TEXT PRIMARY KEY NOT NULL,
+            remote_id TEXT,
+            user_id TEXT,
+            account_id TEXT,
+            category_id TEXT,
+            monthly_limit REAL NOT NULL DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            sync_status TEXT NOT NULL DEFAULT 'synced'
+        );
+
     `);
 
     // Migrate existing settings table (safe no-op if columns already exist)
@@ -102,9 +114,9 @@ export const initDB = async () => {
         `ALTER TABLE settings ADD COLUMN reminder_enabled INTEGER NOT NULL DEFAULT 0`,
         `ALTER TABLE settings ADD COLUMN reminder_hour INTEGER NOT NULL DEFAULT 20`,
         `ALTER TABLE settings ADD COLUMN reminder_minute INTEGER NOT NULL DEFAULT 0`,
-        `ALTER TABLE transactions ADD COLUMN to_account_id TEXT`,
         `ALTER TABLE subscriptions ADD COLUMN subscription_type TEXT NOT NULL DEFAULT 'other'`,
         `ALTER TABLE subscriptions ADD COLUMN time TEXT NOT NULL DEFAULT '09:00'`,
+        `ALTER TABLE subscriptions ADD COLUMN is_estimated INTEGER NOT NULL DEFAULT 0`,
     ];
     for (const stmt of migrateColumns) {
         try { await db.execAsync(stmt); } catch { /* column already exists */ }

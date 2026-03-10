@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Platform, Alert, PermissionsAndroid } from 'react-native';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
 import { Shield, Info, Coins, Check, Sun, Moon, Heart, Sparkles, Bell, Clock } from 'lucide-react-native';
@@ -17,6 +17,8 @@ import { useToast } from '../../src/providers/ToastProvider';
 import { CURRENCY_SYMBOLS } from '../../src/constants/Currency';
 import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
 import { APP_VERSION, APP_DISPLAY_NAME } from '../../src/constants/AppInfo';
+import LogViewerModal from '../../src/components/LogViewerModal';
+import { FileWarning } from 'lucide-react-native';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD'];
 
@@ -32,6 +34,8 @@ export default function SettingsScreen() {
         queryKey: ['settings'],
         queryFn: () => Repository.getSettings() as any
     });
+
+    const [isLogViewerVisible, setIsLogViewerVisible] = useState(false);
 
     const { data: transactions = [] } = useTransactions();
 
@@ -156,6 +160,7 @@ export default function SettingsScreen() {
             showToast('Export failed', 'error');
         }
     };
+
 
     const styles = getStyles(activeColors, insets);
 
@@ -387,6 +392,7 @@ export default function SettingsScreen() {
                 </View>
             </View>
 
+
             {/* Information Section */}
             <View style={styles.section}>
                 <View style={styles.sectionHeader}>
@@ -411,8 +417,25 @@ export default function SettingsScreen() {
                             <Text style={styles.menuValue}>{item.value}</Text>
                         </View>
                     ))}
+
+                    <TouchableOpacity style={styles.menuItem} onPress={() => setIsLogViewerVisible(true)}>
+                        <View style={styles.menuItemLeft}>
+                            <View style={styles.menuIconBox}>
+                                <FileWarning color={activeColors.error} size={18} />
+                            </View>
+                            <View>
+                                <Text style={styles.menuLabel}>View Crash Logs</Text>
+                                <Text style={styles.menuSubLabel}>Technical reports for debugging</Text>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
                 </View>
             </View>
+
+            <LogViewerModal
+                visible={isLogViewerVisible}
+                onClose={() => setIsLogViewerVisible(false)}
+            />
 
             <View style={styles.footer}>
                 <Text style={styles.copyright}>© 2026 Prabalesh</Text>
@@ -424,6 +447,7 @@ export default function SettingsScreen() {
                 </View>
                 <Text style={styles.footerSub}>{APP_DISPLAY_NAME} Financial • Designed for Privacy</Text>
             </View>
+
             <View style={{ height: 40 }} />
         </ScrollView>
     );
@@ -556,6 +580,20 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         fontSize: 13,
         fontWeight: '700',
         color: colors.secondaryText,
+    },
+    privacyNoteBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 16,
+        paddingBottom: 16,
+        paddingTop: 4,
+    },
+    privacyNoteText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: colors.secondaryText,
+        letterSpacing: 0.3,
     },
     // Time Picker
     timePicker: {

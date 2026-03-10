@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Platform, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
 import { useState, useMemo } from 'react';
 import {
-    Plus, ArrowDownLeft, ArrowUpRight, Clock, CheckCircle2, RepeatIcon,
+    Plus, ArrowDownLeft, ArrowUpRight, Clock, CheckCircle2, Repeat,
     Wallet, Sparkles, Heart, CalendarClock, Smartphone, CreditCard, Shield,
     Home, Briefcase, TrendingUp, Zap, Tv, GraduationCap, MoreHorizontal
 } from 'lucide-react-native';
@@ -29,10 +29,20 @@ const TYPE_META: Record<SubscriptionType, { icon: React.ComponentType<any>; colo
 };
 
 const FREQ_LABEL: Record<string, string> = {
-    daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly',
+    hourly: 'Hourly', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly',
 };
 
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+
 export default function SubscriptionsScreen() {
+    return (
+        <ErrorBoundary screenName="Subscriptions">
+            <SubscriptionsContent />
+        </ErrorBoundary>
+    );
+}
+
+function SubscriptionsContent() {
     const insets = useSafeAreaInsets();
     const { currentTheme } = useTheme();
     const activeColors = Colors[currentTheme];
@@ -48,10 +58,34 @@ export default function SubscriptionsScreen() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
 
+    // Amount prompt for estimated ones
+    const [isAmountPromptVisible, setIsAmountPromptVisible] = useState(false);
+    const [promptSub, setPromptSub] = useState<Subscription | null>(null);
+    const [manualAmount, setManualAmount] = useState('');
+
+    const getNextBillingDate = (dateStr: string, frequency: string) => {
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return new Date().toISOString();
+        if (frequency === 'hourly') d.setHours(d.getHours() + 1);
+        else if (frequency === 'daily') d.setDate(d.getDate() + 1);
+        else if (frequency === 'weekly') d.setDate(d.getDate() + 7);
+        else if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
+        else if (frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
+        return d.toISOString();
+    };
+
+    const isDue = (nextDueDateStr: string) => {
+        try {
+            if (!nextDueDateStr) return false;
+            return new Date(nextDueDateStr) <= new Date();
+        } catch { return false; }
+    };
+
     const summary = useMemo(() => {
         const monthlyTotal = subscriptions
             .filter(s => s.type === 'expense')
             .reduce((acc, s) => {
+                if (s.frequency === 'hourly') return acc + s.amount * 24 * 30;
                 if (s.frequency === 'daily') return acc + s.amount * 30;
                 if (s.frequency === 'weekly') return acc + s.amount * 4.33;
                 if (s.frequency === 'monthly') return acc + s.amount;
@@ -62,25 +96,24 @@ export default function SubscriptionsScreen() {
         return { monthlyTotal, dueCount, total: subscriptions.length };
     }, [subscriptions]);
 
-    const getNextBillingDate = (dateStr: string, frequency: string) => {
-        const d = new Date(dateStr);
-        if (frequency === 'daily') d.setDate(d.getDate() + 1);
-        else if (frequency === 'weekly') d.setDate(d.getDate() + 7);
-        else if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
-        else if (frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
-        return d.toISOString();
+    const confirmPayment = (sub: Subscription) => {
+        if (sub.isEstimated) {
+            setPromptSub(sub);
+            setManualAmount(sub.amount.toString());
+            setIsAmountPromptVisible(true);
+        } else {
+            handleConfirmPayment(sub, sub.amount);
+        }
     };
 
-    const isDue = (nextDueDateStr: string) => new Date(nextDueDateStr) <= new Date();
-
-    const handleConfirmPayment = async (sub: Subscription) => {
+    const handleConfirmPayment = async (sub: Subscription, finalAmount: number) => {
         await saveTransaction.mutateAsync({
             accountId: sub.accountId,
             categoryId: sub.categoryId,
-            amount: sub.amount,
+            amount: finalAmount,
             type: sub.type,
             date: sub.nextDueDate,
-            description: `Autopay: ${sub.title}`
+            description: `Autopay: ${sub.title}${sub.isEstimated ? ' (Adj)' : ''}`
         });
         const newNextDue = getNextBillingDate(sub.nextDueDate, sub.frequency);
         await updateSubscriptionLastProcessed.mutateAsync({
@@ -88,6 +121,7 @@ export default function SubscriptionsScreen() {
             nextDueDate: newNextDue,
             lastProcessedDate: new Date().toISOString(),
         });
+        setIsAmountPromptVisible(false);
     };
 
     const renderSubscription = ({ item }: { item: Subscription }) => {
@@ -130,9 +164,15 @@ export default function SubscriptionsScreen() {
                                 </View>
                             )}
                             <View style={styles.freqChip}>
-                                <RepeatIcon size={9} color={activeColors.secondaryText} />
-                                <Text style={styles.freqChipText}>{FREQ_LABEL[item.frequency]}</Text>
+                                <Repeat size={9} color={activeColors.secondaryText} />
+                                <Text style={styles.freqChipText}>{FREQ_LABEL[item.frequency] || item.frequency}</Text>
                             </View>
+                            {item.isEstimated && (
+                                <View style={[styles.freqChip, { backgroundColor: activeColors.tint + '15' }]}>
+                                    <Sparkles size={8} color={activeColors.tint} />
+                                    <Text style={[styles.freqChipText, { color: activeColors.tint }]}>ESTIMATED</Text>
+                                </View>
+                            )}
                         </View>
                         <View style={styles.cardFooter}>
                             <Wallet size={10} color={activeColors.secondaryText} />
@@ -140,7 +180,10 @@ export default function SubscriptionsScreen() {
                             <Text style={styles.dotSep}>·</Text>
                             <CalendarClock size={10} color={activeColors.secondaryText} />
                             <Text style={styles.accountText}>
-                                {new Date(item.nextDueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                {(() => {
+                                    const d = new Date(item.nextDueDate);
+                                    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                                })()}
                             </Text>
                         </View>
                     </View>
@@ -148,12 +191,12 @@ export default function SubscriptionsScreen() {
                     {/* Amount */}
                     <View style={styles.cardRight}>
                         <Text style={[styles.amount, { color }]}>
-                            {isExpense ? '-' : '+'}{symbol}{item.amount.toLocaleString()}
+                            {isExpense ? '-' : '+'}{symbol}{(item.amount ?? 0).toLocaleString()}
                         </Text>
                         {due && (
                             <TouchableOpacity
                                 style={[styles.confirmBtn, { backgroundColor: activeColors.success }]}
-                                onPress={() => handleConfirmPayment(item)}
+                                onPress={() => confirmPayment(item)}
                             >
                                 <CheckCircle2 size={12} color="#fff" />
                                 <Text style={styles.confirmBtnText}>Paid</Text>
@@ -217,7 +260,7 @@ export default function SubscriptionsScreen() {
                 refreshControl={<RefreshControl refreshing={isRefetching || isLoading} onRefresh={refetch} tintColor={activeColors.tint} />}
                 ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
-                        <RepeatIcon size={40} color={activeColors.border} />
+                        <Repeat size={40} color={activeColors.border} />
                         <Text style={styles.emptyText}>No recurring payments yet</Text>
                         <Text style={styles.emptySub}>Tap + to add your first autopay</Text>
                     </View>
@@ -238,6 +281,43 @@ export default function SubscriptionsScreen() {
                 onClose={() => setIsModalVisible(false)}
                 subscription={selectedSub}
             />
+
+            {/* --- Estimated Amount Prompt --- */}
+            <Modal visible={isAmountPromptVisible} transparent animationType="fade" onRequestClose={() => setIsAmountPromptVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', alignItems: 'center' }}>
+                        <View style={styles.promptCard}>
+                            <Text style={styles.promptTitle}>Enter Actual Amount</Text>
+                            <Text style={styles.promptSub}>"{promptSub?.title}" is an estimated autopay. Please confirm the final amount.</Text>
+
+                            <View style={styles.promptInputRow}>
+                                <Text style={styles.promptPrefix}>{symbol}</Text>
+                                <TextInput
+                                    style={styles.promptInput}
+                                    value={manualAmount}
+                                    onChangeText={setManualAmount}
+                                    keyboardType="numeric"
+                                    autoFocus
+                                    placeholder="0.00"
+                                    placeholderTextColor={activeColors.secondaryText}
+                                />
+                            </View>
+
+                            <View style={styles.promptActions}>
+                                <TouchableOpacity style={styles.promptCancel} onPress={() => setIsAmountPromptVisible(false)}>
+                                    <Text style={styles.promptCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.promptConfirm, { backgroundColor: activeColors.success }]}
+                                    onPress={() => promptSub && handleConfirmPayment(promptSub, parseFloat(manualAmount) || 0)}
+                                >
+                                    <Text style={styles.promptConfirmText}>Confirm & Pay</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -324,4 +404,17 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 12,
     },
+
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    promptCard: { backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 24, width: '100%', maxWidth: 340, gap: 16 },
+    promptTitle: { fontSize: FONT.h3, fontWeight: '900', color: colors.text, textAlign: 'center' },
+    promptSub: { fontSize: FONT.xs, fontWeight: '600', color: colors.secondaryText, textAlign: 'center', lineHeight: 16 },
+    promptInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: RADIUS.lg, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: colors.border },
+    promptPrefix: { fontSize: 20, fontWeight: '900', color: colors.text, marginRight: 8 },
+    promptInput: { flex: 1, fontSize: 22, fontWeight: '900', color: colors.text, padding: 0 },
+    promptActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
+    promptCancel: { flex: 1, padding: 14, borderRadius: RADIUS.md, alignItems: 'center' },
+    promptCancelText: { fontSize: FONT.body, fontWeight: '700', color: colors.secondaryText },
+    promptConfirm: { flex: 2, padding: 14, borderRadius: RADIUS.md, alignItems: 'center' },
+    promptConfirmText: { fontSize: FONT.body, fontWeight: '900', color: '#fff' },
 });

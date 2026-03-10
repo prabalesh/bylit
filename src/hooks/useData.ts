@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { Repository } from '../services/repository';
 import { Transaction, Account, Category, Settings, Budget, SplitBill, SplitParticipant, Subscription } from '../types/api';
 import { Alert } from 'react-native';
@@ -212,8 +213,8 @@ const scheduleSubscriptionReminder = async (sub: Partial<Subscription>, title: s
     triggerDate.setDate(triggerDate.getDate() - reminderDays);
     triggerDate.setHours(9, 0, 0, 0); // 9 AM
 
-    // Only schedule if it's in the future
-    if (triggerDate > new Date()) {
+    // Only schedule if it's in the future and date is valid
+    if (!isNaN(triggerDate.getTime()) && triggerDate > new Date()) {
         await safeSchedule({
             content: {
                 title: `Upcoming Autopay: ${title}`,
@@ -239,8 +240,8 @@ export const useSaveSubscription = () => {
     const queryClient = useQueryClient();
     return useMutation({
         mutationFn: async (subscription: Partial<Subscription>) => {
-            await Repository.saveSubscription(subscription);
-            await scheduleSubscriptionReminder(subscription, subscription.title || 'Subscription');
+            const id = await Repository.saveSubscription(subscription);
+            await scheduleSubscriptionReminder({ ...subscription, id }, subscription.title || 'Subscription');
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
@@ -268,6 +269,59 @@ export const useUpdateSubscriptionLastProcessed = () => {
             Repository.updateSubscriptionLastProcessed(data.id, data.nextDueDate, data.lastProcessedDate),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+        }
+    });
+};
+
+export const useDueSubscriptions = () => {
+    const { data: subscriptions = [], ...rest } = useSubscriptions();
+
+    const dueSubscriptions = useMemo(() => {
+        const now = new Date();
+        return subscriptions.filter(sub => {
+            const dueDate = new Date(sub.nextDueDate);
+            // If it's today or in the past, it's due
+            return dueDate <= now;
+        }).sort((a, b) => new Date(a.nextDueDate).getTime() - new Date(b.nextDueDate).getTime());
+    }, [subscriptions]);
+
+    return { data: dueSubscriptions, ...rest };
+};
+
+export const useProcessSubscriptionPayment = () => {
+    const queryClient = useQueryClient();
+    const saveTransaction = useSaveTransaction();
+    const updateSub = useUpdateSubscriptionLastProcessed();
+
+    return useMutation({
+        mutationFn: async ({ subscription, actualAmount }: { subscription: Subscription, actualAmount: number }) => {
+            // 1. Create transaction
+            await saveTransaction.mutateAsync({
+                accountId: subscription.accountId,
+                categoryId: subscription.categoryId,
+                amount: actualAmount,
+                type: subscription.type,
+                description: `Autopay: ${subscription.title}`,
+                date: new Date().toISOString(),
+                currency: 'INR', // Default or from settings
+            });
+
+            // 2. Update subscription
+            const nextDueDate = Repository.calculateNextDueDate(subscription.nextDueDate, subscription.frequency);
+            const lastProcessedDate = new Date().toISOString();
+            await updateSub.mutateAsync({
+                id: subscription.id,
+                nextDueDate,
+                lastProcessedDate
+            });
+
+            // 3. Schedule next reminder
+            await scheduleSubscriptionReminder({ ...subscription, nextDueDate }, subscription.title);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['accounts'] });
         }
     });
 };

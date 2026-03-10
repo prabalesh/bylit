@@ -6,7 +6,17 @@ import { ThemeProvider } from './ThemeContext';
 import { ToastProvider } from './ToastProvider';
 import { ConfirmProvider } from './ConfirmProvider';
 
-const queryClient = new QueryClient();
+import BylitLoadingScreen from '../components/BylitLoadingScreen';
+
+const queryClient = new QueryClient({
+    defaultOptions: {
+        queries: {
+            staleTime: 1000 * 60 * 5, // 5 minutes
+            refetchOnWindowFocus: false,
+            refetchOnMount: false,
+        },
+    },
+});
 
 export function Providers({ children }: { children: React.ReactNode }) {
     const [isDbReady, setIsDbReady] = useState(false);
@@ -17,9 +27,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
     if (!isDbReady) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color="#10b981" />
-            </View>
+            <QueryClientProvider client={queryClient}>
+                <ThemeProvider>
+                    <BylitLoadingScreen />
+                </ThemeProvider>
+            </QueryClientProvider>
         );
     }
 

@@ -74,7 +74,7 @@ const dateFromIso = (iso: string) => {
 const timeToDate = (hhmm: string) => {
     const [h, m] = hhmm.split(':').map(Number);
     const d = new Date();
-    d.setHours(h || 9, m || 0, 0, 0);
+    d.setHours(h ?? 9, m ?? 0, 0, 0);
     return d;
 };
 
@@ -100,6 +100,7 @@ export default function SubscriptionModal({ visible, onClose, subscription }: Su
     const [startDate, setStartDate] = useState(new Date());
     const [time, setTime] = useState(timeToDate('09:00'));
     const [reminderDays, setReminderDays] = useState(0);
+    const [isEstimated, setIsEstimated] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
     // ── picker visibility ──
@@ -123,6 +124,7 @@ export default function SubscriptionModal({ visible, onClose, subscription }: Su
             setStartDate(dateFromIso(subscription.startDate));
             setTime(timeToDate(subscription.time || '09:00'));
             setReminderDays(subscription.reminderDays);
+            setIsEstimated(!!subscription.isEstimated);
         } else {
             resetForm();
         }
@@ -139,6 +141,7 @@ export default function SubscriptionModal({ visible, onClose, subscription }: Su
         setStartDate(new Date());
         setTime(timeToDate('09:00'));
         setReminderDays(0);
+        setIsEstimated(false);
         setErrors({});
     };
 
@@ -171,13 +174,14 @@ export default function SubscriptionModal({ visible, onClose, subscription }: Su
             startDate: startDate.toISOString(),
             nextDueDate: subscription?.nextDueDate ?? startDate.toISOString(),
             reminderDays: reminderDays < 0 ? 0 : reminderDays,
+            isEstimated,
             lastProcessedDate: subscription?.lastProcessedDate,
         });
         onClose();
     };
 
     const styles = getStyles(activeColors);
-    const selectedSubTypeCfg = SUB_TYPES.find(s => s.value === subType)!;
+    const selectedSubTypeCfg = SUB_TYPES.find(s => s.value === subType) || SUB_TYPES[SUB_TYPES.length - 1]; // Fallback to 'other'
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -270,6 +274,23 @@ export default function SubscriptionModal({ visible, onClose, subscription }: Su
                                 />
                             </View>
                             {errors.amount && <Text style={styles.errorText}>{errors.amount}</Text>}
+                        </View>
+
+                        {/* ── Estimated Amount Toggle ── */}
+                        <View style={styles.fieldGroup}>
+                            <TouchableOpacity
+                                style={styles.estimateToggle}
+                                onPress={() => setIsEstimated(!isEstimated)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={[styles.checkbox, isEstimated && { backgroundColor: activeColors.tint, borderColor: activeColors.tint }]}>
+                                    {isEstimated && <Text style={styles.checkboxTick}>✓</Text>}
+                                </View>
+                                <View>
+                                    <Text style={styles.estimateLabel}>Estimated / Variable Amount</Text>
+                                    <Text style={styles.estimateSub}>Amount may vary each interval. We'll ask you for the exact amount when it's due.</Text>
+                                </View>
+                            </TouchableOpacity>
                         </View>
 
                         {/* ── Frequency ── */}
@@ -443,7 +464,7 @@ export default function SubscriptionModal({ visible, onClose, subscription }: Su
                             </TouchableOpacity>
                             {showCategoryPicker && (
                                 <View style={styles.pickerBox}>
-                                    <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+                                    <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={true} nestedScrollEnabled={true} persistentScrollbar={true}>
                                         <TouchableOpacity
                                             style={[styles.pickerItem, !categoryId && { backgroundColor: activeColors.tint + '15' }]}
                                             onPress={() => { setCategoryId(''); setShowCategoryPicker(false); }}
@@ -529,4 +550,10 @@ const getStyles = (colors: any) => StyleSheet.create({
 
     saveBtn: { padding: 16, borderRadius: RADIUS.lg, alignItems: 'center', marginTop: 10 },
     saveBtnText: { fontSize: FONT.body, fontWeight: '900', color: '#fff' },
+
+    estimateToggle: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, backgroundColor: colors.card, padding: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border },
+    checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 2, borderColor: colors.border, marginTop: 2, justifyContent: 'center', alignItems: 'center' },
+    checkboxTick: { color: '#fff', fontSize: 12, fontWeight: '900' },
+    estimateLabel: { fontSize: FONT.sm, fontWeight: '700', color: colors.text },
+    estimateSub: { fontSize: FONT.xs, fontWeight: '500', color: colors.secondaryText, marginTop: 2, marginRight: 20 },
 });

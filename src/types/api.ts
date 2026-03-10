@@ -8,6 +8,8 @@ export interface Account {
     name: string;
     type: 'Bank' | 'Cash' | 'Credit';
     balance: number;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface Category {
@@ -16,6 +18,8 @@ export interface Category {
     iconSlug: string;
     colorHex: string;
     type: 'expense' | 'income' | 'all';
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface Transaction {
@@ -102,6 +106,7 @@ export interface Subscription {
     nextDueDate: string; // ISO
     reminderDays: number; // 0 = on day, 1 = 1 day before
     lastProcessedDate?: string; // ISO
+    isEstimated?: boolean;
 }
 
 export interface SplitBill {
