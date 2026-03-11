@@ -76,6 +76,7 @@ export interface SplitParticipant {
     phone?: string;
     share: number;
     paid: boolean;
+    isMe?: boolean;
 }
 
 export type Frequency = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -117,4 +118,5 @@ export interface SplitBill {
     notes?: string;
     date: string;
     participants: SplitParticipant[];
+    accountId?: string;
 }

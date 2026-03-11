@@ -50,7 +50,16 @@ export const initDB = async () => {
             remote_id TEXT,
             account_id TEXT NOT NULL,
             to_account_id TEXT,
-            paid INTEGER NOT NULL DEFAULT 0,
+            category_id TEXT,
+            amount REAL NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'INR',
+            type TEXT NOT NULL DEFAULT 'expense',
+            description TEXT,
+            date TEXT NOT NULL,
+            person_name TEXT,
+            due_date TEXT,
+            settled_status INTEGER NOT NULL DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
 
@@ -61,6 +70,7 @@ export const initDB = async () => {
             category TEXT,
             notes TEXT,
             date TEXT NOT NULL,
+            account_id TEXT,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
@@ -73,6 +83,7 @@ export const initDB = async () => {
             phone TEXT,
             share REAL NOT NULL,
             paid INTEGER NOT NULL DEFAULT 0,
+            is_me INTEGER NOT NULL DEFAULT 0,
             sync_status TEXT NOT NULL DEFAULT 'synced',
             FOREIGN KEY (split_bill_id) REFERENCES split_bills (id) ON DELETE CASCADE
         );
@@ -117,6 +128,30 @@ export const initDB = async () => {
         `ALTER TABLE subscriptions ADD COLUMN subscription_type TEXT NOT NULL DEFAULT 'other'`,
         `ALTER TABLE subscriptions ADD COLUMN time TEXT NOT NULL DEFAULT '09:00'`,
         `ALTER TABLE subscriptions ADD COLUMN is_estimated INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE split_bills ADD COLUMN account_id TEXT`,
+        `ALTER TABLE split_participants ADD COLUMN is_me INTEGER NOT NULL DEFAULT 0`,
+        // Missing columns for budgets
+        `ALTER TABLE budgets ADD COLUMN user_id TEXT`,
+        `ALTER TABLE budgets ADD COLUMN remote_id TEXT`,
+        `ALTER TABLE budgets ADD COLUMN account_id TEXT`,
+        `ALTER TABLE budgets ADD COLUMN category_id TEXT`,
+        `ALTER TABLE budgets ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
+        // Missing columns for transactions
+        `ALTER TABLE transactions ADD COLUMN category_id TEXT`,
+        `ALTER TABLE transactions ADD COLUMN amount REAL NOT NULL DEFAULT 0`,
+        `ALTER TABLE transactions ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'`,
+        `ALTER TABLE transactions ADD COLUMN type TEXT NOT NULL DEFAULT 'expense'`,
+        `ALTER TABLE transactions ADD COLUMN description TEXT`,
+        `ALTER TABLE transactions ADD COLUMN date TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)`,
+        `ALTER TABLE transactions ADD COLUMN person_name TEXT`,
+        `ALTER TABLE transactions ADD COLUMN due_date TEXT`,
+        `ALTER TABLE transactions ADD COLUMN settled_status INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE transactions ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
+        // Missing columns for categories
+        `ALTER TABLE categories ADD COLUMN user_id TEXT`,
+        `ALTER TABLE categories ADD COLUMN remote_id TEXT`,
+        // Missing columns for accounts
+        `ALTER TABLE accounts ADD COLUMN remote_id TEXT`,
     ];
     for (const stmt of migrateColumns) {
         try { await db.execAsync(stmt); } catch { /* column already exists */ }

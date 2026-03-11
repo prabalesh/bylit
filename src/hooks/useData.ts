@@ -190,9 +190,12 @@ export const useDeleteSplitBill = () => {
 export const useMarkParticipantPaid = () => {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (data: { participantId: string, paid: boolean }) => Repository.markParticipantPaid(data.participantId, data.paid),
+        mutationFn: (data: { participantId: string, paid: boolean, toAccountId?: string }) =>
+            Repository.markParticipantPaid(data.participantId, data.paid, data.toAccountId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['splitBills'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['accounts'] });
         }
     });
 };

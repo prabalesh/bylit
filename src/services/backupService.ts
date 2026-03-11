@@ -2,18 +2,26 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Repository } from './repository';
+import { getDB } from './db';
 
 export class BackupService {
     static async exportDataJSON() {
         try {
+            const db = getDB();
             const data = {
                 accounts: await Repository.getAccounts(),
                 categories: await Repository.getCategories(),
                 transactions: await Repository.getTransactions(),
                 budgets: await Repository.getBudgets(),
                 settings: await Repository.getSettings(),
+                subscriptions: await Repository.getSubscriptions(),
+                splitBills: await Repository.getSplitBills(),
+                // Split participants are fetched within getSplitBills, but for a flat backup we might want them separate
+                // However, getSplitBills already attaches them to each bill. 
+                // To be safe and flat:
+                splitParticipants: await db.getAllAsync('SELECT * FROM split_participants'),
                 exportDate: new Date().toISOString(),
-                version: '1.1.0'
+                version: '1.2.0'
             };
 
             const jsonContent = JSON.stringify(data, null, 2);
@@ -45,7 +53,11 @@ export class BackupService {
                 throw new Error('Invalid backup file format');
             }
 
-            // Perform restoration
+            const db = getDB();
+
+            // Perform restoration in a transaction-safe manner if possible, 
+            // but repository methods handle their own db calls.
+
             // 1. Wipe old data
             await Repository.clearAllData();
 
@@ -54,28 +66,95 @@ export class BackupService {
                 await Repository.saveCategory(cat);
             }
 
-            // 3. Import Transactions
-            // Note: We use saveTransaction which also handles balance impact.
-            // However, during restoration, we want to match the EXACT state from the backup.
-            // Repository.saveTransaction might double-impact if accounts exist.
-            // But clearAllData wiped accounts, so first tx save will create impact on non-existent accounts (0 rows affected).
-            for (const tx of data.transactions) {
-                await Repository.saveTransaction(tx);
-            }
-
-            // 4. Import Accounts (Sets final balances from backup)
+            // 3. Import Accounts
             for (const acc of data.accounts) {
                 await Repository.saveAccount(acc);
             }
 
-            // 5. Import Budgets
+            // 4. Import Transactions 
+            // We need to be careful with SaveTransaction because it applies balance impact.
+            // Since we restored accounts with their FINAL balances, we should probably 
+            // insert transactions directly WITHOUT applying impact, OR 
+            // Restore accounts with 0 balance and let transactions build it up.
+            // Preferred: Insert transactions directly to match backup state exactly.
+            for (const tx of data.transactions) {
+                await db.runAsync(
+                    `INSERT OR REPLACE INTO transactions 
+                    (id, account_id, to_account_id, category_id, amount, currency, type, description, date, person_name, due_date, settled_status, sync_status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        tx.id,
+                        tx.accountId,
+                        tx.toAccountId || null,
+                        tx.categoryId || null,
+                        tx.amount,
+                        tx.currency || 'INR',
+                        tx.type,
+                        tx.description || '',
+                        tx.date,
+                        tx.personName || null,
+                        tx.dueDate || null,
+                        tx.settledStatus ? 1 : 0,
+                        'synced'
+                    ]
+                );
+            }
+
+            // 5. Import Split Bills & Participants
+            if (data.splitBills) {
+                for (const bill of data.splitBills) {
+                    await db.runAsync(
+                        `INSERT OR REPLACE INTO split_bills (id, title, total_amount, category, notes, date, account_id, sync_status)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            bill.id,
+                            bill.title,
+                            bill.totalAmount,
+                            bill.category || null,
+                            bill.notes || null,
+                            bill.date,
+                            bill.accountId || null,
+                            'synced',
+                        ]
+                    );
+                }
+            }
+
+            if (data.splitParticipants) {
+                for (const p of data.splitParticipants) {
+                    await db.runAsync(
+                        `INSERT OR REPLACE INTO split_participants (id, split_bill_id, name, contact_id, phone, share, paid, is_me, sync_status)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            p.id,
+                            p.split_bill_id || p.splitBillId,
+                            p.name,
+                            p.contact_id || p.contactId || null,
+                            p.phone || null,
+                            p.share,
+                            p.paid ? 1 : 0,
+                            (p.is_me ?? p.isMe) ? 1 : 0,
+                            'synced'
+                        ]
+                    );
+                }
+            }
+
+            // 6. Import Subscriptions
+            if (data.subscriptions) {
+                for (const sub of data.subscriptions) {
+                    await Repository.saveSubscription(sub);
+                }
+            }
+
+            // 7. Import Budgets
             if (data.budgets) {
                 for (const b of data.budgets) {
                     await Repository.saveBudget(b);
                 }
             }
 
-            // 6. Import Settings
+            // 8. Import Settings
             if (data.settings) {
                 await Repository.saveSettings(data.settings);
             }

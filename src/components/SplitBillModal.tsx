@@ -10,12 +10,15 @@ import {
 import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
 import { FONT, ICON, BTN, RADIUS } from '../constants/Sizes';
-import { SplitBill, SplitParticipant } from '../types/api';
-import { useSaveSplitBill, useSettings, useCategories } from '../hooks/useData';
-import { getCurrencySymbol } from '../constants/Currency';
 import * as Contacts from 'expo-contacts';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useAccounts, useSaveSplitBill, useSettings, useCategories } from '../hooks/useData';
+import { Account, Category, SplitBill, SplitParticipant } from '../types/api';
+import { getCurrencySymbol } from '../constants/Currency';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ContactPickerModal from './ContactPickerModal';
 
 interface SplitBillModalProps {
     visible: boolean;
@@ -32,6 +35,7 @@ interface LocalParticipant {
     phone?: string;
     share: string;
     paid: boolean;
+    isMe: boolean;
 }
 
 export default function SplitBillModal({ visible, onClose, bill }: SplitBillModalProps) {
@@ -46,12 +50,25 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
     const [totalAmount, setTotalAmount] = useState('');
     const [category, setCategory] = useState('');
     const [notes, setNotes] = useState('');
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(new Date());
+    const [accountId, setAccountId] = useState('');
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [participants, setParticipants] = useState<LocalParticipant[]>([
-        { name: '', share: '', paid: false },
+        { name: 'Myself', share: '', paid: true, isMe: true },
     ]);
     const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+    const [isContactPickerVisible, setIsContactPickerVisible] = useState(false);
+    const [activeParticipantIndex, setActiveParticipantIndex] = useState<number | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
+
+    const insets = useSafeAreaInsets();
+    const { data: accounts = [] } = useAccounts();
+
+    useEffect(() => {
+        if (accounts.length > 0 && !accountId && !bill) {
+            setAccountId(accounts[0].id);
+        }
+    }, [accounts]);
 
     useEffect(() => {
         if (bill) {
@@ -59,7 +76,8 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
             setTotalAmount(bill.totalAmount.toString());
             setCategory(bill.category || '');
             setNotes(bill.notes || '');
-            setDate(bill.date.split('T')[0]);
+            setDate(new Date(bill.date));
+            setAccountId(bill.accountId || '');
             setParticipants(
                 bill.participants.map(p => ({
                     id: p.id,
@@ -68,6 +86,7 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                     phone: p.phone,
                     share: p.share.toString(),
                     paid: p.paid,
+                    isMe: !!p.isMe,
                 }))
             );
         } else {
@@ -80,8 +99,9 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
         setTotalAmount('');
         setCategory('');
         setNotes('');
-        setDate(new Date().toISOString().split('T')[0]);
-        setParticipants([{ name: '', share: '', paid: false }]);
+        setDate(new Date());
+        setAccountId(accounts[0]?.id || '');
+        setParticipants([{ name: 'Myself', share: '', paid: true, isMe: true }]);
         setErrors({});
     };
 
@@ -93,7 +113,7 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
     };
 
     const addParticipant = () => {
-        setParticipants(prev => [...prev, { name: '', share: '', paid: false }]);
+        setParticipants(prev => [...prev, { name: '', share: '', paid: false, isMe: false }]);
     };
 
     const removeParticipant = (index: number) => {
@@ -108,37 +128,24 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
         });
     };
 
-    const pickContact = async (index: number) => {
-        const { status } = await Contacts.requestPermissionsAsync();
-        if (status !== 'granted') return;
-        const { data } = await Contacts.getContactsAsync({
-            fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
-        });
-        if (data.length === 0) return;
-        // Simple picker via Alert with first 10 contacts
-        const choices = data.slice(0, 30).filter(c => c.name);
-        Alert.alert(
-            'Select Contact',
-            undefined,
-            [
-                ...choices.map(c => ({
-                    text: c.name || '',
-                    onPress: () => {
-                        updateParticipant(index, 'name', c.name || '');
-                        updateParticipant(index, 'contactId', c.id);
-                        const phone = c.phoneNumbers?.[0]?.number;
-                        if (phone) updateParticipant(index, 'phone', phone);
-                    }
-                })),
-                { text: 'Cancel', style: 'cancel' },
-            ]
-        );
+    const pickContact = (index: number) => {
+        setActiveParticipantIndex(index);
+        setIsContactPickerVisible(true);
+    };
+
+    const handleContactSelect = (contact: { name: string; phone?: string; id?: string }) => {
+        if (activeParticipantIndex !== null) {
+            updateParticipant(activeParticipantIndex, 'name', contact.name);
+            if (contact.id) updateParticipant(activeParticipantIndex, 'contactId', contact.id);
+            if (contact.phone) updateParticipant(activeParticipantIndex, 'phone', contact.phone);
+        }
     };
 
     const validate = () => {
         const newErrors: Record<string, string> = {};
         if (!title.trim()) newErrors.title = 'Title is required';
         if (!totalAmount || isNaN(parseFloat(totalAmount))) newErrors.totalAmount = 'Valid amount required';
+        if (!accountId) newErrors.accountId = 'Account is required';
         if (participants.length === 0) newErrors.participants = 'Add at least one participant';
         participants.forEach((p, i) => {
             if (!p.name.trim()) newErrors[`pname_${i}`] = 'Name required';
@@ -162,7 +169,8 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                 totalAmount: parseFloat(totalAmount),
                 category: category || undefined,
                 notes: notes.trim() || undefined,
-                date: new Date(date).toISOString(),
+                date: date.toISOString(),
+                accountId: accountId || undefined,
             },
             participants: participants.map(p => ({
                 id: p.id,
@@ -171,15 +179,21 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                 phone: p.phone,
                 share: parseFloat(p.share) || 0,
                 paid: p.paid,
+                isMe: p.isMe,
             })),
         });
         onClose();
     };
 
-    const styles = getStyles(activeColors);
+    const handleDateChange = (event: any, selectedDate?: Date) => {
+        setShowDatePicker(Platform.OS === 'ios');
+        if (selectedDate) setDate(selectedDate);
+    };
+
+    const styles = getStyles(activeColors, insets);
 
     return (
-        <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <View style={styles.container}>
                     {/* Header */}
@@ -223,14 +237,28 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                             </View>
                             <View style={[styles.fieldGroup, { flex: 1 }]}>
                                 <Text style={styles.label}>Date</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="YYYY-MM-DD"
-                                    placeholderTextColor={activeColors.secondaryText}
-                                    value={date}
-                                    onChangeText={setDate}
-                                />
+                                <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
+                                    <Text style={{ color: activeColors.text, fontWeight: '600' }}>{date.toLocaleDateString()}</Text>
+                                </TouchableOpacity>
+                                {showDatePicker && <DateTimePicker value={date} mode="date" display="default" onChange={handleDateChange} />}
                             </View>
+                        </View>
+
+                        {/* Account Selection */}
+                        <View style={styles.fieldGroup}>
+                            <Text style={styles.label}>Settlement Account</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                                {accounts.map((a: Account) => (
+                                    <TouchableOpacity
+                                        key={a.id}
+                                        style={[styles.chip, accountId === a.id && styles.chipActive]}
+                                        onPress={() => setAccountId(a.id)}
+                                    >
+                                        <Text style={[styles.chipText, accountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                            {errors.accountId && <Text style={styles.errorText}>{errors.accountId}</Text>}
                         </View>
 
                         {/* Category */}
@@ -251,7 +279,7 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                             {showCategoryPicker && (
                                 <View style={styles.categoryPickerBox}>
                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, padding: 4 }}>
-                                        {categories.map(cat => (
+                                        {categories.map((cat: Category) => (
                                             <TouchableOpacity
                                                 key={cat.id}
                                                 style={[styles.categoryChip, category === cat.name && { backgroundColor: activeColors.tint, borderColor: activeColors.tint }]}
@@ -298,17 +326,33 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                                     <View style={{ flex: 1 }}>
                                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                             <TextInput
-                                                style={[styles.participantInput, errors[`pname_${i}`] && styles.inputError, { flex: 1 }]}
+                                                style={[styles.participantInput, errors[`pname_${i}`] && styles.inputError, { flex: 1 }, p.isMe && { color: activeColors.tint, fontWeight: '800' }]}
                                                 placeholder={`Person ${i + 1}`}
                                                 placeholderTextColor={activeColors.secondaryText}
                                                 value={p.name}
                                                 onChangeText={v => updateParticipant(i, 'name', v)}
+                                                editable={!p.isMe}
                                             />
+                                            {!p.isMe && (
+                                                <TouchableOpacity
+                                                    style={styles.contactBtn}
+                                                    onPress={() => pickContact(i)}
+                                                >
+                                                    <UserPlus color={activeColors.tint} size={14} />
+                                                </TouchableOpacity>
+                                            )}
                                             <TouchableOpacity
-                                                style={styles.contactBtn}
-                                                onPress={() => pickContact(i)}
+                                                style={[styles.meBtn, p.isMe && { backgroundColor: activeColors.tint }]}
+                                                onPress={() => {
+                                                    // Toggle isMe: only one participant can be "Me"
+                                                    setParticipants(prev => prev.map((part, idx) => ({
+                                                        ...part,
+                                                        isMe: idx === i ? !part.isMe : false,
+                                                        name: idx === i ? (!part.isMe ? 'Myself' : '') : part.name
+                                                    })));
+                                                }}
                                             >
-                                                <UserPlus color={activeColors.tint} size={14} />
+                                                <Text style={[styles.meBtnText, p.isMe && { color: '#fff' }]}>Me</Text>
                                             </TouchableOpacity>
                                         </View>
                                         {p.phone ? (
@@ -369,13 +413,27 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                     </ScrollView>
                 </View>
             </KeyboardAvoidingView>
+            <ContactPickerModal
+                visible={isContactPickerVisible}
+                onClose={() => setIsContactPickerVisible(false)}
+                onSelect={handleContactSelect}
+                colors={activeColors}
+                insets={insets}
+            />
         </Modal>
     );
 }
 
-const getStyles = (colors: any) => StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: Platform.OS === 'android' ? 20 : 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+const getStyles = (colors: any, insets: any) => StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: colors.background,
+        marginTop: Platform.OS === 'android' ? 40 : (Platform.OS === 'ios' ? 50 : 0),
+        borderTopLeftRadius: RADIUS.xl,
+        borderTopRightRadius: RADIUS.xl,
+        overflow: 'hidden'
+    },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     headerTitle: { fontSize: FONT.h2, fontWeight: '900', color: colors.text },
     closeBtn: { ...BTN.md, backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center', borderRadius: BTN.md.borderRadius, borderWidth: 1, borderColor: colors.border },
     scrollContent: { padding: 20, paddingBottom: 60 },
@@ -390,6 +448,11 @@ const getStyles = (colors: any) => StyleSheet.create({
     inputError: { borderColor: colors.error },
     errorText: { fontSize: FONT.xs, color: colors.error, marginTop: 4, fontWeight: '600' },
     row: { flexDirection: 'row', gap: 10 },
+    chipScroll: { flexDirection: 'row', marginBottom: 4 },
+    chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginRight: 8 },
+    chipActive: { borderColor: colors.tint, backgroundColor: colors.tint + '10' },
+    chipText: { fontSize: FONT.xs, fontWeight: '700', color: colors.text },
+    chipTextActive: { color: colors.tint },
     categoryPickerBox: { marginTop: 8, backgroundColor: colors.card, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', padding: 8 },
     categoryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
     categoryChipText: { fontSize: FONT.sm, fontWeight: '700', color: colors.text },
@@ -400,7 +463,9 @@ const getStyles = (colors: any) => StyleSheet.create({
     participantCard: { backgroundColor: colors.card, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 10 },
     participantRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
     participantInput: { backgroundColor: colors.background, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, fontSize: FONT.body, fontWeight: '600', color: colors.text },
-    contactBtn: { ...BTN.sm, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', borderRadius: BTN.sm.borderRadius },
+    contactBtn: { width: 36, height: 36, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', borderRadius: 10 },
+    meBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, justifyContent: 'center' },
+    meBtnText: { fontSize: 10, fontWeight: '900', color: colors.secondaryText, textTransform: 'uppercase' },
     shareInput: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 6 },
     paidBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
     paidText: { fontSize: FONT.xs, fontWeight: '700' },

@@ -316,6 +316,7 @@ export class Repository {
         await db.runAsync('DELETE FROM accounts');
         await db.runAsync('DELETE FROM categories');
         await db.runAsync('DELETE FROM budgets');
+        await db.runAsync('DELETE FROM subscriptions');
         await db.runAsync('DELETE FROM split_bills');
         await db.runAsync('DELETE FROM split_participants');
         // Keep settings singleton
@@ -340,6 +341,7 @@ export class Repository {
                 category: bill.category,
                 notes: bill.notes,
                 date: bill.date,
+                accountId: bill.account_id,
                 participants: participants.map((p: any) => ({
                     id: p.id,
                     splitBillId: p.split_bill_id,
@@ -348,6 +350,7 @@ export class Repository {
                     phone: p.phone,
                     share: p.share,
                     paid: p.paid === 1,
+                    isMe: p.is_me === 1,
                 })),
             });
         }
@@ -361,8 +364,8 @@ export class Repository {
         const db = getDB();
         const id = bill.id || generateId();
         await db.runAsync(
-            `INSERT OR REPLACE INTO split_bills (id, title, total_amount, category, notes, date, sync_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO split_bills (id, title, total_amount, category, notes, date, account_id, sync_status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 bill.title || '',
@@ -370,9 +373,39 @@ export class Repository {
                 bill.category || null,
                 bill.notes || null,
                 bill.date || new Date().toISOString(),
+                bill.accountId || null,
                 'synced',
             ]
         );
+
+        // Automated Transaction: Handle balance impact and split logic
+        if (!bill.id && bill.accountId && bill.totalAmount) {
+            // 1. User's share as 'expense'
+            const me = participants.find(p => p.isMe);
+            if (me && me.share) {
+                await this.saveTransaction({
+                    accountId: bill.accountId,
+                    amount: me.share,
+                    type: 'expense',
+                    description: `Share of: ${bill.title}`,
+                    date: bill.date || new Date().toISOString(),
+                    categoryId: (bill as any).categoryId || undefined,
+                });
+            }
+
+            // 2. Others' shares as individual 'lend' transactions
+            for (const p of participants) {
+                if (p.isMe || !p.share) continue;
+                await this.saveTransaction({
+                    accountId: bill.accountId!,
+                    amount: p.share,
+                    type: 'lend',
+                    description: `Lent for ${bill.title}: ${p.name}`,
+                    personName: p.name,
+                    date: bill.date || new Date().toISOString(),
+                });
+            }
+        }
         // Remove old participants if updating
         if (bill.id) {
             await db.runAsync(
@@ -383,9 +416,9 @@ export class Repository {
         for (const p of participants) {
             const pid = p.id || generateId();
             await db.runAsync(
-                `INSERT OR REPLACE INTO split_participants (id, split_bill_id, name, contact_id, phone, share, paid, sync_status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [pid, id, p.name || '', p.contactId || null, p.phone || null, p.share || 0, p.paid ? 1 : 0, 'synced']
+                `INSERT OR REPLACE INTO split_participants (id, split_bill_id, name, contact_id, phone, share, paid, is_me, sync_status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [pid, id, p.name || '', p.contactId || null, p.phone || null, p.share || 0, p.paid ? 1 : 0, p.isMe ? 1 : 0, 'synced']
             );
         }
         return id;
@@ -400,12 +433,36 @@ export class Repository {
         );
     }
 
-    static async markParticipantPaid(participantId: string, paid: boolean): Promise<void> {
+    static async markParticipantPaid(participantId: string, paid: boolean, toAccountId?: string): Promise<void> {
         const db = getDB();
+
+        // Fetch participant and split bill for transaction automation
+        const p = await db.getFirstAsync<any>('SELECT * FROM split_participants WHERE id = ?', [participantId]);
+        if (!p) return;
+
+        const bill = await db.getFirstAsync<any>('SELECT * FROM split_bills WHERE id = ?', [p.split_bill_id]);
+
+        const wasPaid = p.paid === 1;
+        const isMe = p.is_me === 1;
+
         await db.runAsync(
             'UPDATE split_participants SET paid = ? WHERE id = ?',
             [paid ? 1 : 0, participantId]
         );
+
+        // Automated Transaction: Credit amount when someone else pays
+        if (paid && !wasPaid && !isMe && bill) {
+            const creditAccountId = toAccountId || bill.account_id;
+            if (creditAccountId) {
+                await this.saveTransaction({
+                    accountId: creditAccountId,
+                    amount: p.share,
+                    type: 'income',
+                    description: `Settlement: ${p.name} for ${bill.title}`,
+                    date: new Date().toISOString(),
+                });
+            }
+        }
     }
 
     // Subscriptions
