@@ -6,6 +6,7 @@ import { LogOut, LogIn, Sun, Moon, Heart, User, Settings as SettingsIcon, Home, 
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as appinfo from '../constants/AppInfo';
 
 interface SidebarProps {
     onClose: () => void;
@@ -82,7 +83,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
 
             <View style={styles.footer}>
                 <View style={styles.versionContainer}>
-                    <Text style={styles.versionText}>v1.2.0 • Private & Secure</Text>
+                    <Text style={styles.versionText}>v{appinfo.APP_VERSION} • Private & Secure</Text>
                 </View>
             </View>
         </View>

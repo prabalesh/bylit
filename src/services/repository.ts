@@ -253,7 +253,7 @@ export class Repository {
     // Settings
     static async getSettings(): Promise<Settings | null> {
         const db = getDB();
-        const settings = await db.getFirstAsync<any>('SELECT * FROM settings');
+        const settings = await db.getFirstAsync<any>('SELECT * FROM settings WHERE id = ?', ['singleton_settings']);
         if (!settings) return null;
         return {
             id: String(settings.id),

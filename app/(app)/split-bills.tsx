@@ -1,6 +1,6 @@
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    RefreshControl, Platform, Share, Alert
+    RefreshControl, Platform, Share, Alert, Modal
 } from 'react-native';
 import { useState, useMemo } from 'react';
 import {
@@ -30,6 +30,7 @@ export default function SplitBillsScreen() {
     const [selectedBill, setSelectedBill] = useState<SplitBill | null>(null);
     const [expandedBillId, setExpandedBillId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'splits' | 'settlements'>('splits');
+    const [settlementModal, setSettlementModal] = useState<{ visible: boolean, participantId: string } | null>(null);
 
     const { data: splitBills = [], isLoading, refetch, isRefetching } = useSplitBills();
     const { data: settings } = useSettings();
@@ -132,30 +133,12 @@ export default function SplitBillsScreen() {
         }
 
         if (!paid) {
-            // Asking which account was the money received in
             if (accounts.length === 0) {
                 await markParticipantPaid.mutateAsync({ participantId, paid: true });
                 return;
             }
-
-            Alert.alert(
-                'Settlement Account',
-                'Select account where you received this payment:',
-                [
-                    ...accounts.slice(0, 5).map(acc => ({
-                        text: acc.name,
-                        onPress: () => markParticipantPaid.mutate({
-                            participantId,
-                            paid: true,
-                            toAccountId: acc.id
-                        })
-                    })),
-                    { text: 'Cancel', style: 'cancel' }
-                ]
-            );
+            setSettlementModal({ visible: true, participantId });
         } else {
-            // Unmarking paid - transaction cleanup is handled by Repository.deleteTransaction (called via markParticipantPaid side effects or manual delete)
-            // Note: Repository currently marks settledStatus in transactions. We should probably just toggle.
             await markParticipantPaid.mutateAsync({ participantId, paid: false });
         }
     };
@@ -381,6 +364,62 @@ export default function SplitBillsScreen() {
                 onClose={() => { setIsModalVisible(false); setSelectedBill(null); }}
                 bill={selectedBill}
             />
+
+            {/* Settlement Account Modal */}
+            <Modal
+                visible={!!settlementModal?.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setSettlementModal(null)}
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setSettlementModal(null)}
+                >
+                    <TouchableOpacity
+                        style={styles.settlementModalContent}
+                        activeOpacity={1}
+                        onPress={(e) => e.stopPropagation()}
+                    >
+                        <Text style={styles.settlementTitle}>Settlement Account</Text>
+                        <Text style={styles.settlementSubtitle}>Where did you receive this payment?</Text>
+
+                        <View style={styles.settlementAccountList}>
+                            {accounts.map(acc => (
+                                <TouchableOpacity
+                                    key={acc.id}
+                                    style={styles.settlementAccountItem}
+                                    onPress={() => {
+                                        const pid = settlementModal?.participantId;
+                                        if (pid) {
+                                            markParticipantPaid.mutate({
+                                                participantId: pid,
+                                                paid: true,
+                                                toAccountId: acc.id
+                                            });
+                                        }
+                                        setSettlementModal(null);
+                                    }}
+                                >
+                                    <View style={[styles.settlementIcon, { backgroundColor: activeColors.tint + '15' }]}>
+                                        <Check size={18} color={activeColors.tint} />
+                                    </View>
+                                    <Text style={styles.settlementAccountName}>{acc.name}</Text>
+                                    <Text style={styles.settlementAccountBalance}>{symbol}{acc.balance.toLocaleString()}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.settlementCancelBtn}
+                            onPress={() => setSettlementModal(null)}
+                        >
+                            <Text style={styles.settlementCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            </Modal>
         </View>
     );
 }
@@ -429,4 +468,15 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     emptyContainer: { padding: 50, alignItems: 'center', gap: 8 },
     emptyText: { fontSize: FONT.body, fontWeight: '900', color: colors.text },
     emptySub: { fontSize: FONT.sm, fontWeight: '600', color: colors.secondaryText, textAlign: 'center' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    settlementModalContent: { backgroundColor: colors.background, borderRadius: RADIUS.xl, width: '100%', maxWidth: 400, padding: 24, paddingBottom: 16 },
+    settlementTitle: { fontSize: FONT.h3, fontWeight: '900', color: colors.text, marginBottom: 8 },
+    settlementSubtitle: { fontSize: FONT.sm, fontWeight: '600', color: colors.secondaryText, marginBottom: 20 },
+    settlementAccountList: { gap: 12, marginBottom: 20 },
+    settlementAccountItem: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.card, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border },
+    settlementIcon: { width: 40, height: 40, borderRadius: RADIUS.md, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    settlementAccountName: { flex: 1, fontSize: FONT.body, fontWeight: '700', color: colors.text },
+    settlementAccountBalance: { fontSize: FONT.sm, fontWeight: '800', color: colors.secondaryText },
+    settlementCancelBtn: { padding: 12, alignItems: 'center' },
+    settlementCancelText: { fontSize: FONT.sm, fontWeight: '800', color: colors.tint },
 });

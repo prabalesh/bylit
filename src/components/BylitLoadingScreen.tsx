@@ -4,6 +4,7 @@ import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Zap, Heart, Sparkles } from 'lucide-react-native';
+import * as SplashScreen from 'expo-splash-screen';
 
 const { width } = Dimensions.get('window');
 
@@ -57,19 +58,24 @@ export default function BylitLoadingScreen() {
         Animated.loop(
             Animated.sequence([
                 Animated.timing(pulseAnim, {
-                    toValue: 1.1,
-                    duration: 1500,
+                    toValue: 1.05,
+                    duration: 2000,
                     easing: Easing.inOut(Easing.sin),
                     useNativeDriver: true,
                 }),
                 Animated.timing(pulseAnim, {
                     toValue: 1,
-                    duration: 1500,
+                    duration: 2000,
                     easing: Easing.inOut(Easing.sin),
                     useNativeDriver: true,
                 }),
             ])
         ).start();
+
+        // Hide static splash screen as soon as we mountain the animated loading screen
+        SplashScreen.hideAsync().catch(() => {
+            /* ignore errors in case it's already hidden */
+        });
     }, []);
 
     const spin = rotateAnim.interpolate({

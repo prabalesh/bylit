@@ -1,9 +1,9 @@
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform } from 'react-native';
-import { useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, Dimensions, Platform, Modal } from 'react-native';
+import { useState, useMemo } from 'react';
 import { PieChart as GiftedPieChart, BarChart } from 'react-native-gifted-charts';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
-import { CreditCard, TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3, Heart, Flower } from 'lucide-react-native';
+import { CreditCard, TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3, Heart, Flower, ChevronRight, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getCurrencySymbol } from '../../src/constants/Currency';
 import { useTransactions, useCategories, useAccounts, useSettings } from '../../src/hooks/useData';
@@ -20,6 +20,8 @@ export default function AnalyticsScreen() {
     const { data: settings } = useSettings();
 
     const symbol = getCurrencySymbol(settings?.baseCurrency);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+    const [isCategoryModalVisible, setIsCategoryModalVisible] = useState(false);
 
     const stats = useMemo(() => {
         const income = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + t.amount, 0);
@@ -213,15 +215,26 @@ export default function AnalyticsScreen() {
                     <View style={styles.chartCard}>
                         {stats.categoryData.length > 0 ? (
                             stats.categoryData.slice(0, 5).map((item, index) => (
-                                <View key={index} style={styles.rankRow}>
+                                <TouchableOpacity
+                                    key={index}
+                                    style={styles.rankRow}
+                                    onPress={() => {
+                                        const catId = categories.find(c => c.name === item.text)?.id || 'uncategorized';
+                                        setSelectedCategoryId(catId);
+                                        setIsCategoryModalVisible(true);
+                                    }}
+                                >
                                     <View style={styles.rankInfo}>
                                         <View style={[styles.rankIcon, { backgroundColor: item.color + '15' }]}>
                                             <Text style={{ color: item.color, fontSize: 10, fontWeight: '900' }}>{index + 1}</Text>
                                         </View>
                                         <Text style={styles.rankName}>{item.text}</Text>
                                     </View>
-                                    <Text style={styles.rankValue}>{symbol}{item.value.toLocaleString()}</Text>
-                                </View>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                        <Text style={styles.rankValue}>{symbol}{item.value.toLocaleString()}</Text>
+                                        <ChevronRight size={14} color={activeColors.secondaryText} />
+                                    </View>
+                                </TouchableOpacity>
                             ))
                         ) : (
                             <View style={styles.emptyContainer}>
@@ -236,6 +249,46 @@ export default function AnalyticsScreen() {
                     </View>
                 )}
             </ScrollView>
+
+            {/* Category Transactions Modal */}
+            <Modal
+                visible={isCategoryModalVisible}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setIsCategoryModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>
+                                {categories.find(c => c.id === selectedCategoryId)?.name || 'Uncategorized'} Transactions
+                            </Text>
+                            <TouchableOpacity onPress={() => setIsCategoryModalVisible(false)}>
+                                <X color={activeColors.text} size={24} />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView contentContainerStyle={styles.modalScroll}>
+                            {transactions
+                                .filter(t => (t.categoryId === selectedCategoryId) || (!t.categoryId && selectedCategoryId === 'uncategorized'))
+                                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                .map(t => (
+                                    <View key={t.id} style={styles.transactionItem}>
+                                        <View>
+                                            <Text style={styles.transactionDesc}>{t.description || 'No description'}</Text>
+                                            <Text style={styles.transactionDate}>{new Date(t.date).toLocaleDateString()}</Text>
+                                        </View>
+                                        <Text style={[styles.transactionAmount, { color: t.type === 'expense' ? activeColors.error : activeColors.success }]}>
+                                            {t.type === 'expense' ? '-' : '+'}{symbol}{t.amount.toLocaleString()}
+                                        </Text>
+                                    </View>
+                                ))}
+                            {transactions.filter(t => (t.categoryId === selectedCategoryId) || (!t.categoryId && selectedCategoryId === 'uncategorized')).length === 0 && (
+                                <Text style={styles.emptyText}>No transactions found</Text>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -275,5 +328,14 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     accountName: { fontSize: 14, fontWeight: '700', color: colors.text },
     accountBalance: { fontSize: 14, fontWeight: '900', color: colors.text },
     typeBadge: { marginLeft: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-    typeBadgeText: { fontSize: 8, fontWeight: '800', textTransform: 'uppercase' }
+    typeBadgeText: { fontSize: 8, fontWeight: '800', textTransform: 'uppercase' },
+    modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '70%', padding: 24 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+    modalScroll: { paddingBottom: 40 },
+    transactionItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border + '30' },
+    transactionDesc: { fontSize: 14, fontWeight: '700', color: colors.text },
+    transactionDate: { fontSize: 12, color: colors.secondaryText, marginTop: 2 },
+    transactionAmount: { fontSize: 16, fontWeight: '900' },
 });

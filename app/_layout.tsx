@@ -18,7 +18,13 @@ ErrorUtils.setGlobalHandler((error, isFatal) => {
     }
 });
 
+import * as SplashScreen from 'expo-splash-screen';
 import BylitLoadingScreen from '../src/components/BylitLoadingScreen';
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync().catch(() => {
+    /* reloading the app might cause some errors here, safely ignore */
+});
 
 const MainLayout = () => {
     const { currentTheme } = useTheme();
@@ -26,9 +32,23 @@ const MainLayout = () => {
     const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
-        // Simple delay to ensure providers are initialized if needed
-        setTimeout(() => setIsReady(true), 1500); // Give splash some time to breathe
+        const prepare = async () => {
+            try {
+                // Pre-load any assets or check permissions here if needed
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (e) {
+                console.warn(e);
+            } finally {
+                setIsReady(true);
+            }
+        };
+        prepare();
     }, []);
+
+    useEffect(() => {
+        // The splash screen is now hidden by BylitLoadingScreen as soon as it mounts.
+        // This ensures the animated screen takes over as quickly as possible.
+    }, [isReady]);
 
     if (!isReady) {
         return <BylitLoadingScreen />;

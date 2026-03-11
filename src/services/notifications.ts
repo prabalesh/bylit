@@ -5,8 +5,9 @@ import { getCurrencySymbol } from '../constants/Currency';
 let Notifications: any = null;
 try {
     Notifications = require('expo-notifications');
+    console.log("✅ expo-notifications loaded successfully");
 } catch (e) {
-    console.warn("expo-notifications failed to load. Are you in Expo Go?");
+    console.error("❌ expo-notifications failed to load:", e);
 }
 
 // Notification channel identifier for the daily reminder
@@ -30,21 +31,33 @@ if (Notifications) {
  * Returns true if granted.
  */
 export async function requestNotificationPermissions(): Promise<boolean> {
-    if (!Notifications) return false;
-
-    if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('bylit', {
-            name: 'Bylit Reminders',
-            importance: Notifications.AndroidImportance.DEFAULT,
-            vibrationPattern: [0, 250, 250, 250],
-        });
+    if (!Notifications) {
+        console.warn("Notifications module not available");
+        return false;
     }
 
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    if (existingStatus === 'granted') return true;
+    try {
+        if (Platform.OS === 'android') {
+            const channel = await Notifications.setNotificationChannelAsync('bylit', {
+                name: 'Bylit Reminders',
+                importance: Notifications.AndroidImportance.DEFAULT,
+                vibrationPattern: [0, 250, 250, 250],
+                lightColor: '#FF231F7C',
+            });
+            console.log("✅ Notification channel set:", channel);
+        }
 
-    const { status } = await Notifications.requestPermissionsAsync();
-    return status === 'granted';
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        console.log("Current notification status:", existingStatus);
+        if (existingStatus === 'granted') return true;
+
+        const { status } = await Notifications.requestPermissionsAsync();
+        console.log("Requested notification status:", status);
+        return status === 'granted';
+    } catch (error) {
+        console.error("Error requesting notification permissions:", error);
+        return false;
+    }
 }
 
 /**
@@ -58,7 +71,7 @@ export async function scheduleDailyExpenseReminder(hour: number, minute: number)
     const granted = await requestNotificationPermissions();
     if (!granted) return;
 
-    await Notifications.scheduleNotificationAsync({
+    const result = await Notifications.scheduleNotificationAsync({
         identifier: DAILY_REMINDER_ID,
         content: {
             title: '💰 Time to log your expenses!',
@@ -74,6 +87,7 @@ export async function scheduleDailyExpenseReminder(hour: number, minute: number)
             channelId: 'bylit',
         },
     });
+    console.log("✅ Daily reminder scheduled:", result);
 }
 
 /**

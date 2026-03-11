@@ -1,12 +1,13 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView, Platform, Modal } from 'react-native';
 import { useState, useMemo } from 'react';
 import { Plus, ChevronRight, HelpCircle, Heart, Trash2, X } from 'lucide-react-native';
 import * as LucideIcons from 'lucide-react-native';
 import CategoryModal from '../../src/components/CategoryModal';
-import { Category } from '../../src/types/api';
+import { Category, Transaction } from '../../src/types/api';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
-import { useCategories } from '../../src/hooks/useData';
+import { useCategories, useTransactions, useSettings } from '../../src/hooks/useData';
+import { getCurrencySymbol } from '../../src/constants/Currency';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function CategoriesScreen() {
@@ -15,8 +16,13 @@ export default function CategoriesScreen() {
     const activeColors = Colors[currentTheme];
     const [isCategoryModalVisible, setIsCategoryModalVisible] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+    const [isTransactionModalVisible, setIsTransactionModalVisible] = useState(false);
+    const [viewingCategory, setViewingCategory] = useState<Category | null>(null);
 
     const { data: categories = [], isLoading, refetch, isRefetching } = useCategories();
+    const { data: transactions = [] } = useTransactions();
+    const { data: settings } = useSettings();
+    const symbol = getCurrencySymbol(settings?.baseCurrency);
 
     const groupedCategories = useMemo(() => {
         const groups: { [key: string]: Category[] } = {};
@@ -65,19 +71,24 @@ export default function CategoriesScreen() {
                         {group.data.map(item => {
                             const IconComp = (LucideIcons as any)[item.iconSlug] || HelpCircle;
                             return (
-                                <TouchableOpacity
-                                    key={item.id}
-                                    style={styles.card}
-                                    onPress={() => { setSelectedCategory(item); setIsCategoryModalVisible(true); }}
-                                >
-                                    <View style={styles.cardLeft}>
+                                <View style={styles.card}>
+                                    <TouchableOpacity
+                                        style={styles.cardLeft}
+                                        onPress={() => { setSelectedCategory(item); setIsCategoryModalVisible(true); }}
+                                    >
                                         <View style={[styles.iconContainer, { backgroundColor: item.colorHex + '15' }]}>
                                             <IconComp size={22} color={item.colorHex} />
                                         </View>
                                         <Text style={styles.cardName}>{item.name}</Text>
-                                    </View>
-                                    <ChevronRight size={18} color={activeColors.secondaryText} />
-                                </TouchableOpacity>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                        style={styles.viewTransBtn}
+                                        onPress={() => { setViewingCategory(item); setIsTransactionModalVisible(true); }}
+                                    >
+                                        <LucideIcons.History size={18} color={activeColors.secondaryText} />
+                                    </TouchableOpacity>
+                                </View>
                             );
                         })}
                     </View>
@@ -95,6 +106,46 @@ export default function CategoriesScreen() {
                 onClose={() => { setIsCategoryModalVisible(false); setSelectedCategory(null); }}
                 category={selectedCategory}
             />
+
+            {/* Transactions Modal */}
+            <Modal
+                visible={isTransactionModalVisible}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setIsTransactionModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>{viewingCategory?.name} Transactions</Text>
+                            <TouchableOpacity onPress={() => setIsTransactionModalVisible(false)}>
+                                <X color={activeColors.text} size={24} />
+                            </TouchableOpacity>
+                        </View>
+                        <ScrollView contentContainerStyle={styles.modalScroll}>
+                            {transactions
+                                .filter(t => t.categoryId === viewingCategory?.id)
+                                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                                .map(t => (
+                                    <View key={t.id} style={styles.transactionItem}>
+                                        <View>
+                                            <Text style={styles.transactionDesc}>{t.description || 'No description'}</Text>
+                                            <Text style={styles.transactionDate}>{new Date(t.date).toLocaleDateString()}</Text>
+                                        </View>
+                                        <Text style={[styles.transactionAmount, { color: t.type === 'expense' ? activeColors.error : activeColors.success }]}>
+                                            {t.type === 'expense' ? '-' : '+'}{symbol}{t.amount.toLocaleString()}
+                                        </Text>
+                                    </View>
+                                ))}
+                            {transactions.filter(t => t.categoryId === viewingCategory?.id).length === 0 && (
+                                <View style={{ padding: 40, alignItems: 'center' }}>
+                                    <Text style={styles.emptySub}>No transactions found for this category</Text>
+                                </View>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -117,5 +168,15 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     cardName: { fontSize: 15, fontWeight: '700', color: colors.text },
     emptyContainer: { padding: 50, alignItems: 'center' },
     emptyText: { fontSize: 16, fontWeight: '900', color: colors.text },
-    emptySub: { fontSize: 12, fontWeight: '600', color: colors.secondaryText, marginTop: 4 }
+    emptySub: { fontSize: 12, fontWeight: '600', color: colors.secondaryText, marginTop: 4 },
+    viewTransBtn: { padding: 8 },
+    modalContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: colors.background, borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '70%', padding: 24 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
+    modalScroll: { paddingBottom: 40 },
+    transactionItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border + '30' },
+    transactionDesc: { fontSize: 14, fontWeight: '700', color: colors.text },
+    transactionDate: { fontSize: 12, color: colors.secondaryText, marginTop: 2 },
+    transactionAmount: { fontSize: 16, fontWeight: '900' },
 });

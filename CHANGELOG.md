@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - 2026-03-07
+## [1.3.0] - 2026-03-11
+### Added
+- Advanced Split Bills: Split by Equally, Parts, or Percentage.
+- Modern Settlement UI: Replaced alerts with a selection modal for picking the receiving account.
+- Category-wise Transaction View: View all transactions for a specific category from Analytics and Categories screens.
+- Enhanced Backup & Restore: Updated payload to include all tables and improved data integrity.
+
+### Fixed
+- Fixed notification permission handling for reminders.
+- Smoothed out the app loading transition from splash screen to main app.
+- Optimized loading screen animations for a more premium feel.
+
 ### Added
 - CSV Backup and Restore functionality.
 - Monthly Summary export via CSV.

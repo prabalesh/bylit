@@ -53,6 +53,7 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
     const [date, setDate] = useState(new Date());
     const [accountId, setAccountId] = useState('');
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [splitMode, setSplitMode] = useState<'equally' | 'parts' | 'percentage' | 'manual'>('equally');
     const [participants, setParticipants] = useState<LocalParticipant[]>([
         { name: 'Myself', share: '', paid: true, isMe: true },
     ]);
@@ -102,15 +103,42 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
         setDate(new Date());
         setAccountId(accounts[0]?.id || '');
         setParticipants([{ name: 'Myself', share: '', paid: true, isMe: true }]);
+        setSplitMode('equally');
         setErrors({});
     };
 
-    const splitEqually = () => {
-        const total = parseFloat(totalAmount);
-        if (!total || participants.length === 0) return;
-        const each = (total / participants.length).toFixed(2);
-        setParticipants(prev => prev.map(p => ({ ...p, share: each })));
+    const calculateShares = (mode: string = splitMode, currentParticipants = participants) => {
+        const total = parseFloat(totalAmount) || 0;
+        if (total <= 0 || currentParticipants.length === 0) return currentParticipants;
+
+        let updated = [...currentParticipants];
+
+        if (mode === 'equally') {
+            const share = (total / updated.length).toFixed(2);
+            updated = updated.map(p => ({ ...p, share }));
+        } else if (mode === 'parts') {
+            const totalParts = updated.reduce((sum, p) => sum + (parseFloat(p.share) || 0), 0);
+            if (totalParts > 0) {
+                updated = updated.map(p => ({
+                    ...p,
+                    share: ((parseFloat(p.share || '0') / totalParts) * total).toFixed(2)
+                }));
+            }
+        } else if (mode === 'percentage') {
+            updated = updated.map(p => ({
+                ...p,
+                share: ((parseFloat(p.share || '0') / 100) * total).toFixed(2)
+            }));
+        }
+
+        return updated;
     };
+
+    useEffect(() => {
+        if (splitMode === 'equally' && totalAmount) {
+            setParticipants(prev => calculateShares('equally', prev));
+        }
+    }, [totalAmount, splitMode, participants.length]);
 
     const addParticipant = () => {
         setParticipants(prev => [...prev, { name: '', share: '', paid: false, isMe: false }]);
@@ -147,21 +175,36 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
         if (!totalAmount || isNaN(parseFloat(totalAmount))) newErrors.totalAmount = 'Valid amount required';
         if (!accountId) newErrors.accountId = 'Account is required';
         if (participants.length === 0) newErrors.participants = 'Add at least one participant';
-        participants.forEach((p, i) => {
+
+        let processedParticipants = [...participants];
+        if (splitMode !== 'manual') {
+            processedParticipants = calculateShares();
+        }
+
+        processedParticipants.forEach((p, i) => {
             if (!p.name.trim()) newErrors[`pname_${i}`] = 'Name required';
-            if (!p.share || isNaN(parseFloat(p.share))) newErrors[`pshare_${i}`] = 'Share required';
+            if (!p.share || isNaN(parseFloat(p.share))) newErrors[`pshare_${i}`] = 'Share/Ratio required';
         });
+
         const total = parseFloat(totalAmount) || 0;
-        const sumOfShares = participants.reduce((s, p) => s + (parseFloat(p.share) || 0), 0);
-        if (total > 0 && Math.abs(sumOfShares - total) > 0.01) {
+        const sumOfShares = processedParticipants.reduce((s, p) => s + (parseFloat(p.share) || 0), 0);
+
+        if (total > 0 && Math.abs(sumOfShares - total) > 0.05) {
             newErrors.sharesTotal = `Shares sum (${symbol}${sumOfShares.toFixed(2)}) must equal total (${symbol}${total.toFixed(2)})`;
         }
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
     const handleSave = async () => {
         if (!validate()) return;
+
+        let finalParticipants = [...participants];
+        if (splitMode !== 'manual') {
+            finalParticipants = calculateShares();
+        }
+
         await saveSplitBill.mutateAsync({
             bill: {
                 id: bill?.id,
@@ -172,7 +215,7 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                 date: date.toISOString(),
                 accountId: accountId || undefined,
             },
-            participants: participants.map(p => ({
+            participants: finalParticipants.map(p => ({
                 id: p.id,
                 name: p.name.trim(),
                 contactId: p.contactId,
@@ -244,6 +287,24 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                             </View>
                         </View>
 
+                        {/* Split Mode */}
+                        <View style={styles.fieldGroup}>
+                            <Text style={styles.label}>Split Mode</Text>
+                            <View style={styles.modeContainer}>
+                                {(['equally', 'parts', 'percentage', 'manual'] as const).map((mode) => (
+                                    <TouchableOpacity
+                                        key={mode}
+                                        style={[styles.modeBtn, splitMode === mode && { backgroundColor: activeColors.tint, borderColor: activeColors.tint }]}
+                                        onPress={() => setSplitMode(mode)}
+                                    >
+                                        <Text style={[styles.modeBtnText, splitMode === mode && { color: '#fff' }]}>
+                                            {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </View>
+
                         {/* Account Selection */}
                         <View style={styles.fieldGroup}>
                             <Text style={styles.label}>Settlement Account</Text>
@@ -312,9 +373,9 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                                 <Users color={activeColors.tint} size={ICON.sm} />
                                 <Text style={styles.sectionTitle}>Participants</Text>
                             </View>
-                            <TouchableOpacity style={styles.splitEquallyBtn} onPress={splitEqually}>
+                            <TouchableOpacity style={styles.splitEquallyBtn} onPress={() => setSplitMode('equally')}>
                                 <RefreshCw color={activeColors.tint} size={12} />
-                                <Text style={[styles.splitEquallyText, { color: activeColors.tint }]}>Split Equally</Text>
+                                <Text style={[styles.splitEquallyText, { color: activeColors.tint }]}>Reset Equal</Text>
                             </TouchableOpacity>
                         </View>
                         {errors.participants && <Text style={styles.errorText}>{errors.participants}</Text>}
@@ -366,7 +427,9 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
 
                                     <View style={{ alignItems: 'flex-end', gap: 6 }}>
                                         <View style={[styles.shareInput, errors[`pshare_${i}`] && styles.inputError]}>
-                                            <Text style={styles.inputPrefix}>{symbol}</Text>
+                                            <Text style={styles.inputPrefix}>
+                                                {splitMode === 'parts' ? '#' : splitMode === 'percentage' ? '%' : symbol}
+                                            </Text>
                                             <TextInput
                                                 style={[styles.inputInner, { width: 70 }]}
                                                 placeholder="0.00"
@@ -374,8 +437,19 @@ export default function SplitBillModal({ visible, onClose, bill }: SplitBillModa
                                                 value={p.share}
                                                 onChangeText={v => updateParticipant(i, 'share', v)}
                                                 keyboardType="numeric"
+                                                editable={splitMode !== 'equally'}
                                             />
                                         </View>
+                                        {splitMode !== 'equally' && splitMode !== 'manual' && (
+                                            <Text style={styles.calculatedShare}>
+                                                {symbol}{((parseFloat(p.share) || 0) * (parseFloat(totalAmount) || 0) / (splitMode === 'parts' ? (participants.reduce((s, p) => s + (parseFloat(p.share) || 0), 0) || 1) : 100)).toFixed(2)}
+                                            </Text>
+                                        )}
+                                        {splitMode === 'equally' && (
+                                            <Text style={styles.calculatedShare}>
+                                                Auto-split
+                                            </Text>
+                                        )}
                                         <View style={{ flexDirection: 'row', gap: 6 }}>
                                             <TouchableOpacity
                                                 style={[styles.paidBadge, p.paid && { backgroundColor: activeColors.success + '20', borderColor: activeColors.success }]}
@@ -474,4 +548,8 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     addParticipantText: { fontSize: FONT.sm, fontWeight: '700' },
     saveBtn: { padding: 16, borderRadius: RADIUS.lg, alignItems: 'center', marginTop: 4 },
     saveBtnText: { fontSize: FONT.body, fontWeight: '900', color: '#fff' },
+    modeContainer: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, padding: 4, gap: 4 },
+    modeBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: RADIUS.sm, borderWidth: 1, borderColor: 'transparent' },
+    modeBtnText: { fontSize: 10, fontWeight: '800', color: colors.secondaryText, textTransform: 'uppercase' },
+    calculatedShare: { fontSize: 10, fontWeight: '700', color: colors.tint, marginTop: -4 },
 });
