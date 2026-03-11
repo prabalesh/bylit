@@ -1,7 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Platform, Alert, PermissionsAndroid } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch, Linking } from 'react-native';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
-import { Shield, Info, Coins, Check, Sun, Moon, Heart, Sparkles, Bell, Clock } from 'lucide-react-native';
+import {
+    Shield, Info, Coins, Check, Sun, Moon, Heart, Sparkles,
+    Bell, Clock, Github, Download, Upload, FileText, FileWarning
+} from 'lucide-react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Repository } from '../../src/services/repository';
 import { Settings as SettingsType } from '../../src/types/api';
@@ -10,17 +13,15 @@ import { useState, useEffect } from 'react';
 import { scheduleDailyExpenseReminder, cancelDailyReminder, requestNotificationPermissions } from '../../src/services/notifications';
 import { CSVService } from '../../src/services/csvService';
 import { useTransactions } from '../../src/hooks/useData';
-import { Mail, Github, Download, Upload, FileText } from 'lucide-react-native';
 import { BackupService } from '../../src/services/backupService';
 import { useConfirm } from '../../src/providers/ConfirmProvider';
 import { useToast } from '../../src/providers/ToastProvider';
 import { CURRENCY_SYMBOLS } from '../../src/constants/Currency';
-import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
+import { ICON } from '../../src/constants/Sizes';
 import { APP_VERSION, APP_DISPLAY_NAME } from '../../src/constants/AppInfo';
 import LogViewerModal from '../../src/components/LogViewerModal';
-import { FileWarning } from 'lucide-react-native';
+import type { ThemeMode } from '../../src/providers/ThemeContext';
 
-const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD'];
 
 export default function SettingsScreen() {
     const insets = useSafeAreaInsets();
@@ -30,14 +31,16 @@ export default function SettingsScreen() {
     const { showConfirm } = useConfirm();
     const { showToast } = useToast();
 
+
     const { data: settings } = useQuery<SettingsType>({
         queryKey: ['settings'],
         queryFn: () => Repository.getSettings() as any
     });
 
-    const [isLogViewerVisible, setIsLogViewerVisible] = useState(false);
 
+    const [isLogViewerVisible, setIsLogViewerVisible] = useState(false);
     const { data: transactions = [] } = useTransactions();
+
 
     const updateSettingsMutation = useMutation({
         mutationFn: (updates: Partial<SettingsType>) => Repository.saveSettings(updates),
@@ -46,10 +49,11 @@ export default function SettingsScreen() {
         }
     });
 
-    // Local reminder state — synced from settings
+
     const [reminderEnabled, setReminderEnabled] = useState(false);
     const [reminderHour, setReminderHour] = useState(20);
     const [reminderMinute, setReminderMinute] = useState(0);
+
 
     useEffect(() => {
         if (settings) {
@@ -58,6 +62,7 @@ export default function SettingsScreen() {
             setReminderMinute(settings.reminderMinute ?? 0);
         }
     }, [settings]);
+
 
     const handleToggleReminder = async (value: boolean) => {
         if (!value) {
@@ -95,15 +100,18 @@ export default function SettingsScreen() {
         updateSettingsMutation.mutate({ reminderEnabled: true });
     };
 
+
     const adjustHour = (delta: number) => {
         const newHour = (reminderHour + delta + 24) % 24;
         setReminderHour(newHour);
     };
 
+
     const adjustMinute = (delta: number) => {
         const newMin = (reminderMinute + delta + 60) % 60;
         setReminderMinute(newMin);
     };
+
 
     const saveReminderTime = async () => {
         updateSettingsMutation.mutate({ reminderHour, reminderMinute });
@@ -113,22 +121,26 @@ export default function SettingsScreen() {
         showToast('Reminder time saved', 'success');
     };
 
+
     const formatTime = (h: number, m: number) =>
         `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+
 
     const menuItems = [
         { icon: <Shield color={activeColors.tint} size={18} />, label: 'Data Privacy', value: 'Local Only' },
         { icon: <Info color={activeColors.tint} size={18} />, label: 'App Version', value: `Bylit v${APP_VERSION}` },
     ];
 
+
     const handleBackupJSON = async () => {
         try {
             await BackupService.exportDataJSON();
             showToast('JSON backup exported', 'success');
-        } catch (error) {
+        } catch {
             showToast('JSON export failed', 'error');
         }
     };
+
 
     const handleRestoreJSON = async () => {
         const confirmed = await showConfirm({
@@ -145,24 +157,26 @@ export default function SettingsScreen() {
                     queryClient.invalidateQueries();
                     showToast('Data restored successfully', 'success');
                 }
-            } catch (error) {
+            } catch {
                 showToast('Failed to restore JSON data', 'error');
             }
         }
     };
+
 
     const handleExportSummary = async () => {
         try {
             const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
             await CSVService.exportMonthlySummary(transactions, currentMonth);
             showToast('Summary exported', 'success');
-        } catch (error) {
+        } catch {
             showToast('Export failed', 'error');
         }
     };
 
 
     const styles = getStyles(activeColors, insets);
+
 
     return (
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -173,12 +187,12 @@ export default function SettingsScreen() {
                     <Text style={styles.sectionTitle}>Appearance</Text>
                 </View>
                 <View style={styles.themeGrid}>
-                    {[
-                        { mode: 'light', icon: Sun, label: 'Light' },
-                        { mode: 'dark', icon: Moon, label: 'Dark' },
-                        { mode: 'heart', icon: Heart, label: 'Heart' },
-                        { mode: 'system', icon: Shield, label: 'System' },
-                    ].map((item) => {
+                    {([
+                        { mode: 'light' as ThemeMode, icon: Sun, label: 'Light' },
+                        { mode: 'dark' as ThemeMode, icon: Moon, label: 'Dark' },
+                        { mode: 'heart' as ThemeMode, icon: Heart, label: 'Heart' },
+                        { mode: 'system' as ThemeMode, icon: Shield, label: 'System' },
+                    ]).map((item) => {
                         const isActive = themeMode === item.mode;
                         return (
                             <TouchableOpacity
@@ -187,7 +201,7 @@ export default function SettingsScreen() {
                                     styles.themeCard,
                                     isActive && { borderColor: activeColors.tint, backgroundColor: activeColors.tint + '10' }
                                 ]}
-                                onPress={() => setThemeMode(item.mode as any)}
+                                onPress={() => setThemeMode(item.mode)}
                             >
                                 <View style={[
                                     styles.themeIconContainer,
@@ -208,6 +222,7 @@ export default function SettingsScreen() {
                     })}
                 </View>
             </View>
+
 
             {/* Currency Section */}
             <View style={styles.section}>
@@ -250,6 +265,7 @@ export default function SettingsScreen() {
                 </View>
             </View>
 
+
             {/* Reminders Section */}
             <View style={styles.section}>
                 <View style={styles.sectionHeader}>
@@ -257,7 +273,6 @@ export default function SettingsScreen() {
                     <Text style={styles.sectionTitle}>Reminders</Text>
                 </View>
                 <View style={styles.menuBox}>
-                    {/* Daily Reminder Toggle */}
                     <View style={[styles.menuItem, { borderBottomWidth: 1, borderBottomColor: activeColors.border + '50' }]}>
                         <View style={styles.menuItemLeft}>
                             <View style={styles.menuIconBox}>
@@ -276,7 +291,6 @@ export default function SettingsScreen() {
                         />
                     </View>
 
-                    {/* Time Picker Row */}
                     <View style={[styles.menuItem, { opacity: reminderEnabled ? 1 : 0.45 }]}>
                         <View style={styles.menuItemLeft}>
                             <View style={styles.menuIconBox}>
@@ -285,47 +299,28 @@ export default function SettingsScreen() {
                             <Text style={styles.menuLabel}>Reminder Time</Text>
                         </View>
                         <View style={styles.timePicker}>
-                            {/* Hour */}
                             <View style={styles.timeUnit}>
-                                <TouchableOpacity
-                                    style={styles.timeBtn}
-                                    onPress={() => { adjustHour(1); }}
-                                    disabled={!reminderEnabled}
-                                >
+                                <TouchableOpacity style={styles.timeBtn} onPress={() => adjustHour(1)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▲</Text>
                                 </TouchableOpacity>
                                 <Text style={styles.timeValue}>{reminderHour.toString().padStart(2, '0')}</Text>
-                                <TouchableOpacity
-                                    style={styles.timeBtn}
-                                    onPress={() => { adjustHour(-1); }}
-                                    disabled={!reminderEnabled}
-                                >
+                                <TouchableOpacity style={styles.timeBtn} onPress={() => adjustHour(-1)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▼</Text>
                                 </TouchableOpacity>
                             </View>
 
                             <Text style={styles.timeSep}>:</Text>
 
-                            {/* Minute */}
                             <View style={styles.timeUnit}>
-                                <TouchableOpacity
-                                    style={styles.timeBtn}
-                                    onPress={() => { adjustMinute(5); }}
-                                    disabled={!reminderEnabled}
-                                >
+                                <TouchableOpacity style={styles.timeBtn} onPress={() => adjustMinute(5)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▲</Text>
                                 </TouchableOpacity>
                                 <Text style={styles.timeValue}>{reminderMinute.toString().padStart(2, '0')}</Text>
-                                <TouchableOpacity
-                                    style={styles.timeBtn}
-                                    onPress={() => { adjustMinute(-5); }}
-                                    disabled={!reminderEnabled}
-                                >
+                                <TouchableOpacity style={styles.timeBtn} onPress={() => adjustMinute(-5)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▼</Text>
                                 </TouchableOpacity>
                             </View>
 
-                            {/* Save Button */}
                             <TouchableOpacity
                                 style={[styles.saveTimeBtn, { backgroundColor: activeColors.tint, opacity: reminderEnabled ? 1 : 0.45 }]}
                                 onPress={saveReminderTime}
@@ -336,7 +331,6 @@ export default function SettingsScreen() {
                         </View>
                     </View>
 
-                    {/* Current time summary */}
                     {reminderEnabled && (
                         <View style={styles.reminderInfo}>
                             <Text style={styles.reminderInfoText}>
@@ -346,6 +340,7 @@ export default function SettingsScreen() {
                     )}
                 </View>
             </View>
+
 
             {/* Data Management Section */}
             <View style={styles.section}>
@@ -400,12 +395,12 @@ export default function SettingsScreen() {
                     <Text style={styles.sectionTitle}>Information</Text>
                 </View>
                 <View style={styles.menuBox}>
-                    {menuItems.map((item, index) => (
+                    {menuItems.map((item) => (
                         <View
-                            key={index}
+                            key={item.label}
                             style={[
                                 styles.menuItem,
-                                index < menuItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: activeColors.border + '50' }
+                                { borderBottomWidth: 1, borderBottomColor: activeColors.border + '50' }
                             ]}
                         >
                             <View style={styles.menuItemLeft}>
@@ -432,15 +427,20 @@ export default function SettingsScreen() {
                 </View>
             </View>
 
+
             <LogViewerModal
                 visible={isLogViewerVisible}
                 onClose={() => setIsLogViewerVisible(false)}
             />
 
+
             <View style={styles.footer}>
                 <Text style={styles.copyright}>© 2026 Prabalesh</Text>
                 <View style={styles.footerLinks}>
-                    <TouchableOpacity style={styles.footerLink} onPress={() => { }}>
+                    <TouchableOpacity
+                        style={styles.footerLink}
+                        onPress={() => Linking.openURL('https://github.com/prabalesh')}
+                    >
                         <Github size={12} color={activeColors.tint} />
                         <Text style={[styles.footerLinkText, { color: activeColors.tint }]}>github.com/prabalesh</Text>
                     </TouchableOpacity>
@@ -452,6 +452,7 @@ export default function SettingsScreen() {
         </ScrollView>
     );
 }
+
 
 const getStyles = (colors: any, insets: any) => StyleSheet.create({
     container: {
@@ -581,21 +582,6 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         fontWeight: '700',
         color: colors.secondaryText,
     },
-    privacyNoteBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 16,
-        paddingBottom: 16,
-        paddingTop: 4,
-    },
-    privacyNoteText: {
-        fontSize: 10,
-        fontWeight: '600',
-        color: colors.secondaryText,
-        letterSpacing: 0.3,
-    },
-    // Time Picker
     timePicker: {
         flexDirection: 'row',
         alignItems: 'center',

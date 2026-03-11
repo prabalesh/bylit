@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Repository } from '../services/repository';
 import { Settings } from '../types/api';
 
-type ThemeMode = 'light' | 'dark' | 'heart' | 'system';
+export type ThemeMode = 'light' | 'dark' | 'heart' | 'system';
 
 interface ThemeContextType {
     themeMode: ThemeMode;

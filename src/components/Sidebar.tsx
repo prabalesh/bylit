@@ -1,24 +1,31 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/ThemeContext';
 import { Colors } from '../constants/Colors';
-import { LogOut, LogIn, Sun, Moon, Heart, User, Settings as SettingsIcon, Home, PieChart, Wallet, ArrowLeftRight, Target, ChevronRight, Sparkles } from 'lucide-react-native';
+import { Heart, User, Settings as SettingsIcon, Home, PieChart, Wallet, ArrowLeftRight, Target, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import type { Href } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as appinfo from '../constants/AppInfo';
+
 
 interface SidebarProps {
     onClose: () => void;
 }
 
+interface NavItem {
+    label: string;
+    icon: React.ComponentType<{ color: string; size: number }>;
+    path: Href;
+}
+
 export default function Sidebar({ onClose }: SidebarProps) {
-    const { themeMode, setThemeMode, currentTheme } = useTheme();
+    const { currentTheme } = useTheme();
     const insets = useSafeAreaInsets();
     const activeColors = Colors[currentTheme];
     const router = useRouter();
 
-    const navItems = [
+    const navItems: NavItem[] = [
         { label: 'Transactions', icon: Home, path: '/(app)/' },
         { label: 'Analytics', icon: PieChart, path: '/(app)/analytics' },
         { label: 'Budgets', icon: Target, path: '/(app)/budgets' },
@@ -53,8 +60,8 @@ export default function Sidebar({ onClose }: SidebarProps) {
                 </View>
 
                 {currentTheme === 'heart' && (
-                    <View style={styles.heartDecoration}>
-                        <Heart color={activeColors.tint} size={24} fill={activeColors.tint} opacity={0.1} />
+                    <View style={[styles.heartDecoration, { opacity: 0.1 }]}>
+                        <Heart color={activeColors.tint} size={24} fill={activeColors.tint} />
                     </View>
                 )}
             </View>
@@ -62,20 +69,22 @@ export default function Sidebar({ onClose }: SidebarProps) {
             <ScrollView style={styles.navSection} showsVerticalScrollIndicator={false}>
                 <View style={styles.navGroup}>
                     <Text style={styles.navGroupTitle}>Main Menu</Text>
-                    {navItems.map((item, index) => (
+                    {navItems.map((item) => (
                         <TouchableOpacity
-                            key={index}
+                            key={item.path as string}
                             style={styles.navItem}
                             onPress={() => {
                                 onClose();
-                                router.push(item.path as any);
+                                router.push(item.path);
                             }}
                         >
                             <View style={[styles.navIconContainer, { backgroundColor: activeColors.card }]}>
                                 <item.icon color={activeColors.tint} size={20} />
                             </View>
                             <Text style={styles.navLabel}>{item.label}</Text>
-                            <ChevronRight color={activeColors.secondaryText} size={16} opacity={0.3} />
+                            <View style={{ opacity: 0.3 }}>
+                                <ChevronRight color={activeColors.secondaryText} size={16} />
+                            </View>
                         </TouchableOpacity>
                     ))}
                 </View>
@@ -183,52 +192,6 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     footer: {
         padding: 20,
         paddingBottom: insets.bottom + 16,
-    },
-    themeCard: {
-        backgroundColor: colors.card,
-        borderRadius: 24,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    themeHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 16,
-        marginLeft: 4,
-    },
-    themeCardTitle: {
-        fontSize: 11,
-        fontWeight: '900',
-        color: colors.secondaryText,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    themeGrid: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    themeOption: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        paddingVertical: 12,
-        borderRadius: 16,
-        backgroundColor: colors.background,
-        borderWidth: 1,
-        borderColor: colors.border,
-    },
-    themeOptionActive: {
-        backgroundColor: colors.tint,
-        borderColor: colors.tint,
-        elevation: 4,
-    },
-    themeOptionLabel: {
-        fontSize: 10,
-        fontWeight: '800',
-        textTransform: 'uppercase',
     },
     versionContainer: {
         marginTop: 16,
