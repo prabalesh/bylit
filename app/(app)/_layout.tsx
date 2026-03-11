@@ -1,22 +1,65 @@
 import { Tabs } from 'expo-router';
-import { Home, PieChart, Wallet, ArrowLeftRight, Settings, Menu, Sun, Moon, Target, LayoutGrid, Receipt } from 'lucide-react-native';
-import { useColorScheme, TouchableOpacity, View, Modal, StyleSheet, Animated, Pressable } from 'react-native';
+import {
+    Home, PieChart, Wallet, ArrowLeftRight, Menu
+} from 'lucide-react-native';
+import {
+    TouchableOpacity, View, Modal, StyleSheet,
+    Animated, Pressable
+} from 'react-native';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Sidebar from '../../src/components/Sidebar';
-import { Repository } from '../../src/services/repository';
-import { useEffect } from 'react';
-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AppLayout() {
     const insets = useSafeAreaInsets();
-    const { currentTheme, setThemeMode, iconSize } = useTheme();
+    const { currentTheme } = useTheme();
     const activeColors = Colors[currentTheme];
-    const [isSidebarVisible, setIsSidebarVisible] = useState(false);
 
-    const toggleSidebar = () => setIsSidebarVisible(!isSidebarVisible);
+    const [isSidebarVisible, setIsSidebarVisible] = useState(false);
+    const slideAnim = useRef(new Animated.Value(-500)).current;
+    const backdropAnim = useRef(new Animated.Value(0)).current;
+
+    const openSidebar = () => {
+        setIsSidebarVisible(true);
+        Animated.parallel([
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                useNativeDriver: true,
+                bounciness: 0,
+                speed: 20,
+            }),
+            Animated.timing(backdropAnim, {
+                toValue: 1,
+                duration: 250,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    };
+
+    const closeSidebar = () => {
+        Animated.parallel([
+            Animated.timing(slideAnim, {
+                toValue: -500,
+                duration: 220,
+                useNativeDriver: true,
+            }),
+            Animated.timing(backdropAnim, {
+                toValue: 0,
+                duration: 220,
+                useNativeDriver: true,
+            }),
+        ]).start(() => setIsSidebarVisible(false));
+    };
+
+    // Reset animation when modal mounts
+    useEffect(() => {
+        if (!isSidebarVisible) {
+            slideAnim.setValue(-500);
+            backdropAnim.setValue(0);
+        }
+    }, [isSidebarVisible]);
 
     return (
         <View style={{ flex: 1 }}>
@@ -24,11 +67,11 @@ export default function AppLayout() {
                 screenOptions={{
                     headerShown: true,
                     headerLeft: () => (
-                        <TouchableOpacity onPress={toggleSidebar} style={{ marginLeft: 20 }}>
+                        <TouchableOpacity onPress={openSidebar} style={{ marginLeft: 20 }}>
                             <Menu color={activeColors.text} size={20} />
                         </TouchableOpacity>
                     ),
-                    headerTitle: "Bylit",
+                    headerTitle: 'Bylit',
                     headerStyle: {
                         backgroundColor: activeColors.background,
                         elevation: 0,
@@ -82,7 +125,7 @@ export default function AppLayout() {
                         tabBarIcon: ({ color }) => <ArrowLeftRight color={color} size={24} />,
                     }}
                 />
-                {/* Hidden from tab bar — accessible via sidebar / quick actions */}
+                {/* Hidden from tab bar — accessible via sidebar */}
                 <Tabs.Screen name="budgets" options={{ href: null }} />
                 <Tabs.Screen name="categories" options={{ href: null }} />
                 <Tabs.Screen name="split-bills" options={{ href: null }} />
@@ -94,12 +137,30 @@ export default function AppLayout() {
                 visible={isSidebarVisible}
                 transparent={true}
                 animationType="none"
-                onRequestClose={toggleSidebar}
+                onRequestClose={closeSidebar}
             >
                 <View style={styles.modalOverlay}>
-                    <Pressable style={styles.backdrop} onPress={toggleSidebar} />
-                    <Animated.View style={[styles.sidebarContainer, { backgroundColor: activeColors.background }]}>
-                        <Sidebar onClose={toggleSidebar} />
+                    {/* Animated backdrop */}
+                    <Animated.View
+                        style={[
+                            styles.backdrop,
+                            { opacity: backdropAnim }
+                        ]}
+                    >
+                        <Pressable style={StyleSheet.absoluteFill} onPress={closeSidebar} />
+                    </Animated.View>
+
+                    {/* Animated sidebar */}
+                    <Animated.View
+                        style={[
+                            styles.sidebarContainer,
+                            {
+                                backgroundColor: activeColors.background,
+                                transform: [{ translateX: slideAnim }],
+                            }
+                        ]}
+                    >
+                        <Sidebar onClose={closeSidebar} />
                     </Animated.View>
                 </View>
             </Modal>
@@ -125,8 +186,8 @@ const styles = StyleSheet.create({
         height: '100%',
         shadowColor: '#000',
         shadowOffset: { width: 4, height: 0 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
         elevation: 10,
     },
 });
