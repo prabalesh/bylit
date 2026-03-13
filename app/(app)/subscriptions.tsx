@@ -1,19 +1,21 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Platform, Modal, TextInput, KeyboardAvoidingView } from 'react-native';
-import { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { useState, useMemo, useCallback } from 'react';
 import {
-    Plus, ArrowDownLeft, ArrowUpRight, Clock, CheckCircle2, Repeat,
+    Plus, Clock, CheckCircle2, Repeat,
     Wallet, Sparkles, Heart, CalendarClock, Smartphone, CreditCard, Shield,
     Home, Briefcase, TrendingUp, Zap, Tv, GraduationCap, MoreHorizontal
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
-import { FONT, ICON, RADIUS } from '../../src/constants/Sizes';
+import { FONT, RADIUS } from '../../src/constants/Sizes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSubscriptions, useCategories, useAccounts, useSettings, useSaveTransaction, useUpdateSubscriptionLastProcessed } from '../../src/hooks/useData';
 import { getCurrencySymbol } from '../../src/constants/Currency';
 import SubscriptionModal from '../../src/components/SubscriptionModal';
 import { Subscription, SubscriptionType } from '../../src/types/api';
+import { ErrorBoundary } from '../../src/components/ErrorBoundary';
+
 
 const TYPE_META: Record<SubscriptionType, { icon: React.ComponentType<any>; color: string }> = {
     app_subscription: { icon: Smartphone, color: '#6366F1' },
@@ -32,7 +34,6 @@ const FREQ_LABEL: Record<string, string> = {
     hourly: 'Hourly', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly', yearly: 'Yearly',
 };
 
-import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 
 export default function SubscriptionsScreen() {
     return (
@@ -41,6 +42,7 @@ export default function SubscriptionsScreen() {
         </ErrorBoundary>
     );
 }
+
 
 function SubscriptionsContent() {
     const insets = useSafeAreaInsets();
@@ -57,8 +59,6 @@ function SubscriptionsContent() {
 
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
-
-    // Amount prompt for estimated ones
     const [isAmountPromptVisible, setIsAmountPromptVisible] = useState(false);
     const [promptSub, setPromptSub] = useState<Subscription | null>(null);
     const [manualAmount, setManualAmount] = useState('');
@@ -124,7 +124,9 @@ function SubscriptionsContent() {
         setIsAmountPromptVisible(false);
     };
 
-    const renderSubscription = ({ item }: { item: Subscription }) => {
+    const styles = getStyles(activeColors, insets);
+
+    const renderSubscription = useCallback(({ item }: { item: Subscription }) => {
         const isExpense = item.type === 'expense';
         const color = isExpense ? activeColors.error : activeColors.success;
         const due = isDue(item.nextDueDate);
@@ -140,12 +142,10 @@ function SubscriptionsContent() {
                 activeOpacity={0.8}
             >
                 <View style={styles.cardRow}>
-                    {/* Type Icon Avatar */}
                     <View style={[styles.avatar, { backgroundColor: typeMeta.color + '18' }]}>
                         <TypeIcon color={typeMeta.color} size={20} />
                     </View>
 
-                    {/* Info */}
                     <View style={styles.cardInfo}>
                         <View style={styles.cardTitleRow}>
                             <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
@@ -182,16 +182,17 @@ function SubscriptionsContent() {
                             <Text style={styles.accountText}>
                                 {(() => {
                                     const d = new Date(item.nextDueDate);
-                                    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                                    return isNaN(d.getTime())
+                                        ? '—'
+                                        : d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
                                 })()}
                             </Text>
                         </View>
                     </View>
 
-                    {/* Amount */}
                     <View style={styles.cardRight}>
                         <Text style={[styles.amount, { color }]}>
-                            {isExpense ? '-' : '+'}{symbol}{(item.amount ?? 0).toLocaleString()}
+                            {isExpense ? '-' : '+'}{symbol}{(item.amount ?? 0).toLocaleString('en-IN')}
                         </Text>
                         {due && (
                             <TouchableOpacity
@@ -206,17 +207,16 @@ function SubscriptionsContent() {
                 </View>
             </TouchableOpacity>
         );
-    };
-
-    const styles = getStyles(activeColors, insets);
+    }, [categories, accounts, activeColors, symbol, styles]);
 
     return (
         <View style={styles.container}>
-            {/* Header */}
             <View style={styles.headerArea}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.titleRow}>
                     <Text style={styles.headerTitle}>Autopay</Text>
-                    {currentTheme === 'heart' && <Heart color={activeColors.tint} size={20} fill={activeColors.tint} />}
+                    {currentTheme === 'heart' && (
+                        <Heart color={activeColors.tint} size={20} fill={activeColors.tint} />
+                    )}
                 </View>
                 <Text style={styles.headerSub}>Recurring payments</Text>
             </View>
@@ -229,10 +229,14 @@ function SubscriptionsContent() {
                     end={{ x: 1, y: 1 }}
                     style={styles.summaryCard}
                 >
-                    <Sparkles color="rgba(255,255,255,0.5)" size={18} style={styles.summaryIcon} />
+                    <View style={styles.summaryIcon}>
+                        <Sparkles color="rgba(255,255,255,0.5)" size={18} />
+                    </View>
                     <View>
                         <Text style={styles.summaryLabel}>EST. MONTHLY SPEND</Text>
-                        <Text style={styles.summaryAmount}>{symbol}{Math.round(summary.monthlyTotal).toLocaleString()}</Text>
+                        <Text style={styles.summaryAmount}>
+                            {symbol}{Math.round(summary.monthlyTotal).toLocaleString('en-IN')}
+                        </Text>
                     </View>
                     <View style={styles.summaryDivider} />
                     <View style={styles.summaryStats}>
@@ -240,7 +244,7 @@ function SubscriptionsContent() {
                             <Text style={styles.statValue}>{summary.total}</Text>
                             <Text style={styles.statLabel}>Active</Text>
                         </View>
-                        <View style={[styles.statItem, summary.dueCount > 0 && { opacity: 1 }]}>
+                        <View style={styles.statItem}>
                             <Text style={[styles.statValue, summary.dueCount > 0 && { color: '#FFE57A' }]}>
                                 {summary.dueCount}
                             </Text>
@@ -250,14 +254,19 @@ function SubscriptionsContent() {
                 </LinearGradient>
             </View>
 
-            {/* List */}
             <FlatList
                 data={subscriptions}
                 keyExtractor={(item) => item.id}
                 renderItem={renderSubscription}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
-                refreshControl={<RefreshControl refreshing={isRefetching || isLoading} onRefresh={refetch} tintColor={activeColors.tint} />}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefetching || isLoading}
+                        onRefresh={refetch}
+                        tintColor={activeColors.tint}
+                    />
+                }
                 ListEmptyComponent={() => (
                     <View style={styles.emptyContainer}>
                         <Repeat size={40} color={activeColors.border} />
@@ -267,7 +276,6 @@ function SubscriptionsContent() {
                 )}
             />
 
-            {/* FAB */}
             <TouchableOpacity
                 style={[styles.fab, { backgroundColor: activeColors.tint }]}
                 onPress={() => { setSelectedSub(null); setIsModalVisible(true); }}
@@ -282,13 +290,22 @@ function SubscriptionsContent() {
                 subscription={selectedSub}
             />
 
-            {/* --- Estimated Amount Prompt --- */}
-            <Modal visible={isAmountPromptVisible} transparent animationType="fade" onRequestClose={() => setIsAmountPromptVisible(false)}>
+            <Modal
+                visible={isAmountPromptVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsAmountPromptVisible(false)}
+            >
                 <View style={styles.modalOverlay}>
-                    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%', alignItems: 'center' }}>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        style={styles.keyboardView}
+                    >
                         <View style={styles.promptCard}>
                             <Text style={styles.promptTitle}>Enter Actual Amount</Text>
-                            <Text style={styles.promptSub}>"{promptSub?.title}" is an estimated autopay. Please confirm the final amount.</Text>
+                            <Text style={styles.promptSub}>
+                                "{promptSub?.title}" is an estimated autopay. Please confirm the final amount.
+                            </Text>
 
                             <View style={styles.promptInputRow}>
                                 <Text style={styles.promptPrefix}>{symbol}</Text>
@@ -304,7 +321,10 @@ function SubscriptionsContent() {
                             </View>
 
                             <View style={styles.promptActions}>
-                                <TouchableOpacity style={styles.promptCancel} onPress={() => setIsAmountPromptVisible(false)}>
+                                <TouchableOpacity
+                                    style={styles.promptCancel}
+                                    onPress={() => setIsAmountPromptVisible(false)}
+                                >
                                     <Text style={styles.promptCancelText}>Cancel</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
@@ -322,54 +342,45 @@ function SubscriptionsContent() {
     );
 }
 
+
 const getStyles = (colors: any, insets: any) => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     headerArea: {
         paddingHorizontal: 20,
-        paddingTop: Platform.OS === 'ios' ? insets.top : 16,
+        paddingTop: 16,
         paddingBottom: 8,
     },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     headerTitle: { fontSize: 28, fontWeight: '900', color: colors.text, letterSpacing: -0.5 },
-    headerSub: { fontSize: FONT.xs, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 1, marginTop: 2 },
-
+    headerSub: {
+        fontSize: FONT.xs, fontWeight: '700', color: colors.secondaryText,
+        textTransform: 'uppercase', letterSpacing: 1, marginTop: 2,
+    },
     summaryWrap: { paddingHorizontal: 20, paddingBottom: 12 },
     summaryCard: {
-        borderRadius: RADIUS.xl,
-        padding: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-        elevation: 6,
-        shadowColor: colors.tint,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.35,
-        shadowRadius: 12,
+        borderRadius: RADIUS.xl, padding: 20,
+        flexDirection: 'row', alignItems: 'center', gap: 16,
+        elevation: 6, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12,
     },
     summaryIcon: { position: 'absolute', top: 14, right: 14 },
-    summaryLabel: { fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase', letterSpacing: 1 },
+    summaryLabel: {
+        fontSize: 9, fontWeight: '800', color: 'rgba(255,255,255,0.65)',
+        textTransform: 'uppercase', letterSpacing: 1,
+    },
     summaryAmount: { fontSize: 26, fontWeight: '900', color: '#fff', marginTop: 2 },
     summaryDivider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.25)', marginHorizontal: 4 },
     summaryStats: { gap: 10 },
     statItem: { alignItems: 'center' },
     statValue: { fontSize: 18, fontWeight: '900', color: '#fff' },
     statLabel: { fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.65)', textTransform: 'uppercase' },
-
     listContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
-
     card: {
-        backgroundColor: colors.card,
-        borderRadius: RADIUS.xl,
-        marginBottom: 12,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
+        backgroundColor: colors.card, borderRadius: RADIUS.xl,
+        marginBottom: 12, padding: 16, borderWidth: 1, borderColor: colors.border,
     },
     cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    avatar: {
-        width: 46, height: 46, borderRadius: 14,
-        justifyContent: 'center', alignItems: 'center', flexShrink: 0,
-    },
-    avatarText: { fontSize: 15, fontWeight: '900' },
+    avatar: { width: 46, height: 46, borderRadius: 14, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
     cardInfo: { flex: 1, gap: 4 },
     cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     cardTitle: { fontSize: FONT.body, fontWeight: '800', color: colors.text, flex: 1 },
@@ -379,37 +390,46 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
     catChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
     catDot: { width: 5, height: 5, borderRadius: 3 },
     catChipText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
-    freqChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: colors.border + '40' },
+    freqChip: {
+        flexDirection: 'row', alignItems: 'center', gap: 3,
+        paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8,
+        backgroundColor: colors.border + '40',
+    },
     freqChipText: { fontSize: 9, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.3 },
     cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     accountText: { fontSize: FONT.xs, color: colors.secondaryText, fontWeight: '600' },
     dotSep: { color: colors.border, fontWeight: '900' },
-
     cardRight: { alignItems: 'flex-end', gap: 8, flexShrink: 0 },
     amount: { fontSize: 16, fontWeight: '900' },
     confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
     confirmBtnText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-
     emptyContainer: { paddingTop: 60, alignItems: 'center', gap: 10 },
     emptyText: { fontSize: FONT.body, fontWeight: '900', color: colors.text, marginTop: 8 },
     emptySub: { fontSize: FONT.xs, fontWeight: '600', color: colors.secondaryText },
-
     fab: {
         position: 'absolute', bottom: 24, right: 24,
         width: 56, height: 56, borderRadius: 20,
         justifyContent: 'center', alignItems: 'center',
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
+        elevation: 8, shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12,
     },
-
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    promptCard: { backgroundColor: colors.card, borderRadius: RADIUS.xl, padding: 24, width: '100%', maxWidth: 340, gap: 16 },
+    modalOverlay: {
+        flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center', alignItems: 'center', padding: 20,
+    },
+    keyboardView: { width: '100%', alignItems: 'center' },
+    promptCard: {
+        backgroundColor: colors.card, borderRadius: RADIUS.xl,
+        padding: 24, width: '100%', maxWidth: 340, gap: 16,
+    },
     promptTitle: { fontSize: FONT.h3, fontWeight: '900', color: colors.text, textAlign: 'center' },
     promptSub: { fontSize: FONT.xs, fontWeight: '600', color: colors.secondaryText, textAlign: 'center', lineHeight: 16 },
-    promptInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: RADIUS.lg, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: colors.border },
+    promptInputRow: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: colors.background, borderRadius: RADIUS.lg,
+        paddingHorizontal: 16, paddingVertical: 12,
+        borderWidth: 1, borderColor: colors.border,
+    },
     promptPrefix: { fontSize: 20, fontWeight: '900', color: colors.text, marginRight: 8 },
     promptInput: { flex: 1, fontSize: 22, fontWeight: '900', color: colors.text, padding: 0 },
     promptActions: { flexDirection: 'row', gap: 12, marginTop: 8 },

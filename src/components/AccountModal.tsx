@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, Modal, TouchableOpacity, ScrollView, Platform, Alert, BackHandler } from 'react-native';
-import { X, Trash2, Heart, Flower, AlertCircle, Check } from 'lucide-react-native';
+import { View, Text, StyleSheet, TextInput, Modal, TouchableOpacity, ScrollView, BackHandler } from 'react-native';
+import { X, Trash2 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Account } from '../types/api';
 import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
@@ -8,7 +9,9 @@ import { useToast } from '../providers/ToastProvider';
 import { useConfirm } from '../providers/ConfirmProvider';
 import { useSettings, useSaveAccount, useDeleteAccount } from '../hooks/useData';
 
+
 const ACCOUNT_TYPES = ['Bank', 'Cash', 'Credit'];
+
 
 interface AccountModalProps {
     visible: boolean;
@@ -16,11 +19,10 @@ interface AccountModalProps {
     account?: Account | null;
 }
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function AccountModal({ visible, onClose, account = null }: AccountModalProps) {
     const insets = useSafeAreaInsets();
-    const { currentTheme } = useTheme();
+    const { currentTheme, fontScale, iconScale } = useTheme();
     const { showToast } = useToast();
     const { showConfirm } = useConfirm();
     const activeColors = Colors[currentTheme];
@@ -41,12 +43,7 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             }
             return false;
         };
-
-        const backHandler = BackHandler.addEventListener(
-            'hardwareBackPress',
-            backAction,
-        );
-
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
         return () => backHandler.remove();
     }, [visible, onClose]);
 
@@ -69,7 +66,6 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             confirmText: 'Delete',
             type: 'danger'
         });
-
         if (confirmed) {
             deleteMutation.mutate(account!.id, {
                 onSuccess: () => {
@@ -91,7 +87,6 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             showToast('Please enter a valid balance', 'error');
             return;
         }
-
         saveMutation.mutate({
             id: account?.id,
             name: name.trim(),
@@ -106,7 +101,6 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
         });
     };
 
-    const { fontScale, iconScale } = useTheme();
     const styles = getStyles(activeColors, insets, fontScale);
 
     return (
@@ -114,7 +108,7 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             <View style={[styles.modalOverlay, { backgroundColor: activeColors.background + '80' }]}>
                 <View style={styles.container}>
                     <View style={styles.header}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <View style={styles.titleRow}>
                             <Text style={styles.title}>{account ? 'Edit Account' : 'New Account'}</Text>
                         </View>
                         <View style={styles.headerRight}>
@@ -169,7 +163,7 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
                             />
                         </View>
 
-                        <View style={{ height: 40 }} />
+                        <View style={styles.scrollSpacer} />
                     </ScrollView>
 
                     <View style={styles.footer}>
@@ -189,40 +183,76 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
     );
 }
 
+
 const getStyles = (colors: any, insets: any, fontScale: any) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
-        marginTop: Platform.OS === 'ios' ? 100 : 40,
+        marginTop: Math.max(insets.top, 40),
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: colors.border
+        borderColor: colors.border,
     },
     modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border },
+    header: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
     title: { fontSize: fontScale.title, fontWeight: '900', color: colors.text },
-    closeBtn: { padding: 6, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
-    deleteBtn: { padding: 6, backgroundColor: colors.error + '10', borderRadius: 12, borderWidth: 1, borderColor: colors.error + '20' },
+    closeBtn: {
+        padding: 6, backgroundColor: colors.card,
+        borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+    },
+    deleteBtn: {
+        padding: 6, backgroundColor: colors.error + '10',
+        borderRadius: 12, borderWidth: 1, borderColor: colors.error + '20',
+    },
     content: { flex: 1, padding: 20 },
-    typeSelector: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 18, marginBottom: 24, padding: 4, borderWidth: 1, borderColor: colors.border },
+    typeSelector: {
+        flexDirection: 'row', backgroundColor: colors.card, borderRadius: 18,
+        marginBottom: 24, padding: 4, borderWidth: 1, borderColor: colors.border,
+    },
     typeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 14 },
-    typeBtnActive: { backgroundColor: colors.tint, elevation: 4, shadowColor: colors.tint, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
-    typeBtnText: { fontSize: fontScale.label + 1, fontWeight: '800', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.5 },
+    typeBtnActive: {
+        backgroundColor: colors.tint, elevation: 4, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8,
+    },
+    typeBtnText: {
+        fontSize: fontScale.label + 1, fontWeight: '800', color: colors.secondaryText,
+        textTransform: 'uppercase', letterSpacing: 0.5,
+    },
     typeBtnTextActive: { color: '#ffffff' },
     inputGroup: { marginBottom: 24 },
-    label: { fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase', color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1 },
-    input: { backgroundColor: colors.card, padding: 14, borderRadius: 16, fontSize: fontScale.body + 1, fontWeight: '700', color: colors.text, borderWidth: 1, borderColor: colors.border },
-    inputLarge: { backgroundColor: colors.card, padding: 20, borderRadius: 20, fontSize: fontScale.input, fontWeight: '900', color: colors.tint, borderWidth: 1, borderColor: colors.border, textAlign: 'center' },
+    label: {
+        fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase',
+        color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1,
+    },
+    input: {
+        backgroundColor: colors.card, padding: 14, borderRadius: 16,
+        fontSize: fontScale.body + 1, fontWeight: '700', color: colors.text,
+        borderWidth: 1, borderColor: colors.border,
+    },
+    inputLarge: {
+        backgroundColor: colors.card, padding: 20, borderRadius: 20,
+        fontSize: fontScale.input, fontWeight: '900', color: colors.tint,
+        borderWidth: 1, borderColor: colors.border, textAlign: 'center',
+    },
+    scrollSpacer: { height: 40 },
     footer: {
         padding: 20,
         paddingBottom: insets.bottom > 0 ? insets.bottom : 20,
         backgroundColor: colors.card,
         borderTopWidth: 1,
-        borderTopColor: colors.border
+        borderTopColor: colors.border,
     },
-    saveBtn: { backgroundColor: colors.tint, padding: 16, borderRadius: 20, alignItems: 'center', elevation: 8, shadowColor: colors.tint, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12 },
-    saveBtnText: { color: '#ffffff', fontSize: fontScale.body + 1, fontWeight: '900' }
+    saveBtn: {
+        backgroundColor: colors.tint, padding: 16, borderRadius: 20, alignItems: 'center',
+        elevation: 8, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12,
+    },
+    saveBtnText: { color: '#ffffff', fontSize: fontScale.body + 1, fontWeight: '900' },
 });

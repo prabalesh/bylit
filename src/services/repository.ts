@@ -31,23 +31,65 @@ export class Repository {
     // Transactions
     static async getTransactions(startDate?: Date, endDate?: Date, accountId?: string): Promise<Transaction[]> {
         const db = getDB();
-        let query = 'SELECT * FROM transactions WHERE sync_status != "deleted"';
-        const params: any[] = [];
+        // Always fetch ALL transactions to compute accurate running balances backwards
+        let query = 'SELECT * FROM transactions WHERE sync_status != "deleted" ORDER BY date DESC';
+        const results = await db.getAllAsync<any>(query);
 
+        // Fetch accounts to get names
+        const accounts = await this.getAccounts();
+        const accountMap = new Map(accounts.map(a => [a.id, a.name]));
+
+        const allMapped = results.map(row => {
+            const tx = this.mapRowToTransaction(row);
+            tx.accountName = accountMap.get(tx.accountId) || 'Unknown';
+            return tx;
+        });
+
+        // Calculate running balance per account for all transactions
+        const runningBalances = new Map<string, number>();
+        accounts.forEach(a => runningBalances.set(a.id, a.balance));
+
+        // The transactions are ORDER BY date DESC, so the first one is the latest.
+        for (const tx of allMapped) {
+            const currentBal = runningBalances.get(tx.accountId) || 0;
+            tx.balanceAfter = currentBal;
+
+            // To get the balance BEFORE this transaction, subtract its forward impact
+            let impact = 0;
+            switch (tx.type) {
+                case 'expense':
+                case 'lend':
+                    impact = -tx.amount;
+                    break;
+                case 'income':
+                case 'borrow':
+                    impact = tx.amount;
+                    break;
+                case 'transfer':
+                    impact = -tx.amount; // Source account impact
+                    break;
+            }
+            runningBalances.set(tx.accountId, currentBal - impact);
+
+            if (tx.type === 'transfer' && tx.toAccountId) {
+                const toCurrentBal = runningBalances.get(tx.toAccountId) || 0;
+                // Forward impact on destination is +amount
+                runningBalances.set(tx.toAccountId, toCurrentBal - tx.amount);
+            }
+        }
+
+        // Apply filters in JS
+        let filtered = allMapped;
         if (startDate && endDate) {
-            query += ' AND date BETWEEN ? AND ?';
-            params.push(startDate.toISOString(), endDate.toISOString());
+            const startStr = startDate.toISOString();
+            const endStr = endDate.toISOString();
+            filtered = filtered.filter(t => t.date >= startStr && t.date <= endStr);
         }
-
         if (accountId) {
-            query += ' AND account_id = ?';
-            params.push(accountId);
+            filtered = filtered.filter(t => t.accountId === accountId || t.toAccountId === accountId);
         }
 
-        query += ' ORDER BY date DESC';
-        const results = await db.getAllAsync<any>(query, params);
-
-        return results.map(this.mapRowToTransaction.bind(this));
+        return filtered;
     }
 
     private static mapRowToTransaction(row: any): Transaction {
@@ -64,6 +106,7 @@ export class Repository {
             personName: row.person_name ? String(row.person_name) : undefined,
             dueDate: row.due_date ? String(row.due_date) : undefined,
             settledStatus: row.settled_status === 1,
+            relatedId: row.related_id ? String(row.related_id) : undefined,
             createdAt: String(row.updated_at || new Date().toISOString()),
             updatedAt: String(row.updated_at || new Date().toISOString())
         };
@@ -125,8 +168,8 @@ export class Repository {
 
         await db.runAsync(
             `INSERT OR REPLACE INTO transactions 
-            (id, account_id, to_account_id, category_id, amount, currency, type, description, date, person_name, due_date, settled_status, sync_status) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, account_id, to_account_id, category_id, amount, currency, type, description, date, person_name, due_date, settled_status, related_id, sync_status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 tx.accountId || '',
@@ -140,6 +183,7 @@ export class Repository {
                 tx.personName || null,
                 tx.dueDate || null,
                 tx.settledStatus ? 1 : 0,
+                tx.relatedId || null,
                 'synced'
             ]
         );
@@ -151,7 +195,7 @@ export class Repository {
 
     static async deleteTransaction(id: string): Promise<void> {
         const db = getDB();
-        const row = await db.getFirstAsync<any>('SELECT * FROM transactions WHERE id = ?', [id]);
+        const row = await db.getFirstAsync<any>('SELECT * FROM transactions WHERE id = ? AND sync_status != "deleted"', [id]);
         if (!row) return;
 
         const tx = this.mapRowToTransaction(row);
@@ -165,6 +209,19 @@ export class Repository {
             );
             if (linkedRow) {
                 await this.deleteTransaction(linkedRow.id); // Recursive call to cleanup balance and mark deleted
+            }
+        }
+
+        // If it's a settlement transaction being deleted, unmark the split participant as paid
+        if (tx.type === 'income' && tx.description.startsWith('Settlement:') && tx.relatedId) {
+            await db.runAsync('UPDATE split_participants SET paid = 0 WHERE id = ?', [tx.relatedId]);
+            // Also unmark the original 'lend' transaction as settled
+            const lendTx = await db.getFirstAsync<any>(
+                'SELECT id FROM transactions WHERE type = "lend" AND related_id = ? AND sync_status != "deleted"',
+                [tx.relatedId]
+            );
+            if (lendTx) {
+                await db.runAsync('UPDATE transactions SET settled_status = 0 WHERE id = ?', [lendTx.id]);
             }
         }
 
@@ -389,13 +446,16 @@ export class Repository {
                     type: 'expense',
                     description: `Share of: ${bill.title}`,
                     date: bill.date || new Date().toISOString(),
-                    categoryId: (bill as any).categoryId || undefined,
+                    categoryId: bill.category || undefined,
+                    relatedId: id,
                 });
             }
 
             // 2. Others' shares as individual 'lend' transactions
             for (const p of participants) {
                 if (p.isMe || !p.share) continue;
+                const participantId = p.id || generateId();
+                p.id = participantId; // Ensure we use the same ID for participant and transaction relatedId
                 await this.saveTransaction({
                     accountId: bill.accountId!,
                     amount: p.share,
@@ -403,6 +463,7 @@ export class Repository {
                     description: `Lent for ${bill.title}: ${p.name}`,
                     personName: p.name,
                     date: bill.date || new Date().toISOString(),
+                    relatedId: participantId,
                 });
             }
         }
@@ -426,6 +487,15 @@ export class Repository {
 
     static async deleteSplitBill(id: string): Promise<void> {
         const db = getDB();
+        // Also delete associated transactions FIRST
+        const associatedTx = await db.getAllAsync<any>(
+            'SELECT id FROM transactions WHERE (related_id IN (SELECT id FROM split_participants WHERE split_bill_id = ?) OR related_id = ?) AND sync_status != "deleted"',
+            [id, id]
+        );
+        for (const tx of associatedTx) {
+            await this.deleteTransaction(tx.id);
+        }
+
         await db.runAsync('UPDATE split_bills SET sync_status = "deleted" WHERE id = ?', [id]);
         await db.runAsync(
             'UPDATE split_participants SET sync_status = "deleted" WHERE split_bill_id = ?',
@@ -460,7 +530,35 @@ export class Repository {
                     type: 'income',
                     description: `Settlement: ${p.name} for ${bill.title}`,
                     date: new Date().toISOString(),
+                    relatedId: participantId,
                 });
+
+                // Also mark the original 'lend' transaction as settled
+                const lendTx = await db.getFirstAsync<any>(
+                    'SELECT id FROM transactions WHERE type = "lend" AND related_id = ? AND sync_status != "deleted"',
+                    [participantId]
+                );
+                if (lendTx) {
+                    await db.runAsync('UPDATE transactions SET settled_status = 1 WHERE id = ?', [lendTx.id]);
+                }
+            }
+        } else if (!paid && wasPaid && !isMe) {
+            // If unmarked as paid, find and delete the settlement transaction
+            const settlementTx = await db.getFirstAsync<any>(
+                'SELECT id FROM transactions WHERE type = "income" AND related_id = ? AND sync_status != "deleted"',
+                [participantId]
+            );
+            if (settlementTx) {
+                await this.deleteTransaction(settlementTx.id);
+            }
+
+            // Also unmark the original 'lend' transaction as settled
+            const lendTx = await db.getFirstAsync<any>(
+                'SELECT id FROM transactions WHERE type = "lend" AND related_id = ? AND sync_status != "deleted"',
+                [participantId]
+            );
+            if (lendTx) {
+                await db.runAsync('UPDATE transactions SET settled_status = 0 WHERE id = ?', [lendTx.id]);
             }
         }
     }

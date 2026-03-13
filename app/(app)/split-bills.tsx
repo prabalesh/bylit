@@ -1,6 +1,6 @@
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    RefreshControl, Platform, Share, Alert, Modal
+    RefreshControl, Share, Modal
 } from 'react-native';
 import { useState, useMemo } from 'react';
 import {
@@ -12,15 +12,18 @@ import { useTheme } from '../../src/providers/ThemeContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SplitBill, SplitParticipant } from '../../src/types/api';
-import { useSplitBills, useDeleteSplitBill, useMarkParticipantPaid, useAccounts } from '../../src/hooks/useData';
-import { useSettings } from '../../src/hooks/useData';
+import {
+    useSplitBills, useDeleteSplitBill, useMarkParticipantPaid,
+    useAccounts, useSettings
+} from '../../src/hooks/useData';
 import { getCurrencySymbol } from '../../src/constants/Currency';
 import SplitBillModal from '../../src/components/SplitBillModal';
-import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
+import { FONT, ICON, RADIUS } from '../../src/constants/Sizes';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useConfirm } from '../../src/providers/ConfirmProvider';
 import { useToast } from '../../src/providers/ToastProvider';
+import ConfirmationModal from '../../src/components/ConfirmationModal';
+
 
 export default function SplitBillsScreen() {
     const insets = useSafeAreaInsets();
@@ -30,14 +33,16 @@ export default function SplitBillsScreen() {
     const [selectedBill, setSelectedBill] = useState<SplitBill | null>(null);
     const [expandedBillId, setExpandedBillId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'splits' | 'settlements'>('splits');
-    const [settlementModal, setSettlementModal] = useState<{ visible: boolean, participantId: string } | null>(null);
+    // Stores participantId of the pending settlement, null when closed
+    const [settlementParticipantId, setSettlementParticipantId] = useState<string | null>(null);
 
     const { data: splitBills = [], isLoading, refetch, isRefetching } = useSplitBills();
     const { data: settings } = useSettings();
     const deleteSplitBill = useDeleteSplitBill();
     const markParticipantPaid = useMarkParticipantPaid();
     const { data: accounts = [] } = useAccounts();
-    const { showConfirm } = useConfirm();
+    const [isDeleteModalVisible, setIsDeleteModalVisible] = useState(false);
+    const [billToDelete, setBillToDelete] = useState<SplitBill | null>(null);
     const { showToast } = useToast();
 
     const symbol = getCurrencySymbol(settings?.baseCurrency);
@@ -56,13 +61,11 @@ export default function SplitBillsScreen() {
     }, [splitBills]);
 
     const settlements = useMemo(() => {
-        const map: Record<string, { share: number, phone?: string }> = {};
+        const map: Record<string, { share: number; phone?: string }> = {};
         for (const bill of splitBills) {
             for (const p of bill.participants) {
                 if (p.isMe || p.paid) continue;
-                if (!map[p.name]) {
-                    map[p.name] = { share: 0, phone: p.phone };
-                }
+                if (!map[p.name]) map[p.name] = { share: 0, phone: p.phone };
                 map[p.name].share += p.share;
             }
         }
@@ -76,20 +79,20 @@ export default function SplitBillsScreen() {
     const generateTextReport = (bill: SplitBill): string => {
         const lines: string[] = [
             `📋 Split Bill: ${bill.title}`,
-            `📅 Date: ${new Date(bill.date).toLocaleDateString()}`,
+            `📅 Date: ${new Date(bill.date).toLocaleDateString('en-IN')}`,
             bill.category ? `🏷️ Category: ${bill.category}` : '',
-            `💰 Total: ${symbol}${bill.totalAmount.toLocaleString()}`,
+            `💰 Total: ${symbol}${bill.totalAmount.toLocaleString('en-IN')}`,
             bill.notes ? `📝 Notes: ${bill.notes}` : '',
             '',
             '👥 Participants:',
             ...bill.participants.map(
-                p => `  • ${p.name}: ${symbol}${p.share.toLocaleString()} — ${p.paid ? '✅ Paid' : '⏳ Pending'}${p.phone ? ` (${p.phone})` : ''}`
+                p => `  • ${p.name}: ${symbol}${p.share.toLocaleString('en-IN')} — ${p.paid ? '✅ Paid' : '⏳ Pending'}${p.phone ? ` (${p.phone})` : ''}`
             ),
             '',
-            `Pending total: ${symbol}${bill.participants.filter(p => !p.paid).reduce((s, p) => s + p.share, 0).toLocaleString()}`,
-            `Paid total: ${symbol}${bill.participants.filter(p => p.paid).reduce((s, p) => s + p.share, 0).toLocaleString()}`,
+            `Pending total: ${symbol}${bill.participants.filter(p => !p.paid).reduce((s, p) => s + p.share, 0).toLocaleString('en-IN')}`,
+            `Paid total: ${symbol}${bill.participants.filter(p => p.paid).reduce((s, p) => s + p.share, 0).toLocaleString('en-IN')}`,
         ];
-        return lines.filter(l => l !== null).join('\n');
+        return lines.filter(l => l !== '').join('\n');
     };
 
     const handleShareMessage = async (bill: SplitBill) => {
@@ -113,16 +116,17 @@ export default function SplitBillsScreen() {
         }
     };
 
-    const handleDelete = async (bill: SplitBill) => {
-        const confirmed = await showConfirm({
-            title: 'Delete Split Bill',
-            message: `Delete "${bill.title}"? This cannot be undone.`,
-            confirmText: 'Delete',
-            type: 'danger',
-        });
-        if (confirmed) {
-            await deleteSplitBill.mutateAsync(bill.id);
-            showToast('Split bill deleted', 'success');
+    const handleDelete = (bill: SplitBill) => {
+        setBillToDelete(bill);
+        setIsDeleteModalVisible(true);
+    };
+
+    const confirmDelete = async () => {
+        if (billToDelete) {
+            await deleteSplitBill.mutateAsync(billToDelete.id);
+            showToast('Split bill and associated transactions deleted', 'success');
+            setIsDeleteModalVisible(false);
+            setBillToDelete(null);
         }
     };
 
@@ -131,13 +135,12 @@ export default function SplitBillsScreen() {
             await markParticipantPaid.mutateAsync({ participantId, paid: !paid });
             return;
         }
-
         if (!paid) {
             if (accounts.length === 0) {
                 await markParticipantPaid.mutateAsync({ participantId, paid: true });
                 return;
             }
-            setSettlementModal({ visible: true, participantId });
+            setSettlementParticipantId(participantId);
         } else {
             await markParticipantPaid.mutateAsync({ participantId, paid: false });
         }
@@ -147,9 +150,11 @@ export default function SplitBillsScreen() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={styles.titleRow}>
                         <Text style={styles.title}>Split Bills</Text>
-                        {currentTheme === 'heart' && <Heart color={activeColors.tint} size={20} fill={activeColors.tint} />}
+                        {currentTheme === 'heart' && (
+                            <Heart color={activeColors.tint} size={20} fill={activeColors.tint} />
+                        )}
                     </View>
                     <Text style={styles.subtitle}>Track shared expenses</Text>
                 </View>
@@ -162,19 +167,31 @@ export default function SplitBillsScreen() {
             </View>
 
             <ScrollView
-                refreshControl={<RefreshControl refreshing={isRefetching || isLoading} onRefresh={refetch} tintColor={activeColors.tint} />}
-                contentContainerStyle={{ paddingBottom: 100 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefetching || isLoading}
+                        onRefresh={refetch}
+                        tintColor={activeColors.tint}
+                    />
+                }
+                contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
                 {/* Summary Cards */}
                 <View style={styles.summaryGrid}>
-                    <LinearGradient colors={[activeColors.notification, activeColors.notification + 'CC']} style={styles.summaryCard}>
+                    <LinearGradient
+                        colors={[activeColors.notification, activeColors.notification + 'CC']}
+                        style={styles.summaryCard}
+                    >
                         <Text style={styles.summaryLabel}>Owed to you</Text>
-                        <Text style={styles.summaryValue}>{symbol}{summary.outstanding.toLocaleString()}</Text>
+                        <Text style={styles.summaryValue}>{symbol}{summary.outstanding.toLocaleString('en-IN')}</Text>
                     </LinearGradient>
-                    <LinearGradient colors={[activeColors.success, activeColors.success + 'CC']} style={styles.summaryCard}>
+                    <LinearGradient
+                        colors={[activeColors.success, activeColors.success + 'CC']}
+                        style={styles.summaryCard}
+                    >
                         <Text style={styles.summaryLabel}>Settled</Text>
-                        <Text style={styles.summaryValue}>{symbol}{summary.settled.toLocaleString()}</Text>
+                        <Text style={styles.summaryValue}>{symbol}{summary.settled.toLocaleString('en-IN')}</Text>
                     </LinearGradient>
                 </View>
 
@@ -200,13 +217,16 @@ export default function SplitBillsScreen() {
                         <>
                             <Text style={styles.listSectionTitle}>All Bills ({splitBills.length})</Text>
                             {splitBills.map((bill: SplitBill) => {
-                                const unpaidParticipants = bill.participants.filter((p: SplitParticipant) => !p.paid && !p.isMe);
+                                const unpaidParticipants = bill.participants.filter(
+                                    (p: SplitParticipant) => !p.paid && !p.isMe
+                                );
                                 const unpaidCount = unpaidParticipants.length;
                                 const isExpanded = expandedBillId === bill.id;
-                                const unpaidTotal = unpaidParticipants.reduce((s: number, p: SplitParticipant) => s + p.share, 0);
+                                const unpaidTotal = unpaidParticipants.reduce(
+                                    (s: number, p: SplitParticipant) => s + p.share, 0
+                                );
                                 return (
                                     <View key={bill.id} style={styles.card}>
-                                        {/* Card Header */}
                                         <TouchableOpacity
                                             style={styles.cardHeader}
                                             onPress={() => setExpandedBillId(isExpanded ? null : bill.id)}
@@ -215,67 +235,95 @@ export default function SplitBillsScreen() {
                                                 <View style={[styles.iconContainer, { backgroundColor: activeColors.tint + '15' }]}>
                                                     <Users color={activeColors.tint} size={ICON.md} />
                                                 </View>
-                                                <View style={{ flex: 1 }}>
+                                                <View style={styles.cardTitleBlock}>
                                                     <Text style={styles.billTitle}>{bill.title}</Text>
-                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                                    <View style={styles.cardMeta}>
                                                         {bill.category && (
                                                             <View style={styles.categoryBadge}>
                                                                 <Tag size={9} color={activeColors.tint} />
-                                                                <Text style={[styles.categoryBadgeText, { color: activeColors.tint }]}>{bill.category}</Text>
+                                                                <Text style={[styles.categoryBadgeText, { color: activeColors.tint }]}>
+                                                                    {bill.category}
+                                                                </Text>
                                                             </View>
                                                         )}
-                                                        <Text style={styles.dateText}>{new Date(bill.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}</Text>
+                                                        <Text style={styles.dateText}>
+                                                            {new Date(bill.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
+                                                        </Text>
                                                     </View>
                                                 </View>
                                             </View>
-                                            <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                                                <Text style={styles.billAmount}>{symbol}{bill.totalAmount.toLocaleString()}</Text>
-                                                <View style={[styles.statusBadge, { backgroundColor: unpaidCount > 0 ? activeColors.warning + '15' : activeColors.success + '15' }]}>
-                                                    <Text style={[styles.statusText, { color: unpaidCount > 0 ? activeColors.warning : activeColors.success }]}>
+                                            <View style={styles.cardRight}>
+                                                <Text style={styles.billAmount}>
+                                                    {symbol}{bill.totalAmount.toLocaleString('en-IN')}
+                                                </Text>
+                                                <View style={[
+                                                    styles.statusBadge,
+                                                    { backgroundColor: unpaidCount > 0 ? activeColors.warning + '15' : activeColors.success + '15' }
+                                                ]}>
+                                                    <Text style={[
+                                                        styles.statusText,
+                                                        { color: unpaidCount > 0 ? activeColors.warning : activeColors.success }
+                                                    ]}>
                                                         {unpaidCount > 0 ? `${unpaidCount} pending` : 'Settled'}
                                                     </Text>
                                                 </View>
                                             </View>
                                         </TouchableOpacity>
 
-                                        {/* Expanded Details */}
                                         {isExpanded && (
                                             <View style={styles.expandedSection}>
                                                 {bill.notes ? (
                                                     <Text style={styles.notesText}>{bill.notes}</Text>
                                                 ) : null}
 
-                                                {/* Participants */}
                                                 {bill.participants.map((p: SplitParticipant) => (
                                                     <TouchableOpacity
                                                         key={p.id}
                                                         style={styles.participantRow}
                                                         onPress={() => togglePaid(p.id, p.paid, !!p.isMe)}
                                                     >
-                                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                                            <View style={[styles.paidCircle, { borderColor: p.paid ? activeColors.success : activeColors.border, backgroundColor: p.paid ? activeColors.success + '20' : 'transparent' }]}>
+                                                        <View style={styles.participantLeft}>
+                                                            <View style={[
+                                                                styles.paidCircle,
+                                                                {
+                                                                    borderColor: p.paid ? activeColors.success : activeColors.border,
+                                                                    backgroundColor: p.paid ? activeColors.success + '20' : 'transparent'
+                                                                }
+                                                            ]}>
                                                                 {p.paid && <Check size={10} color={activeColors.success} />}
                                                             </View>
                                                             <View>
-                                                                <Text style={[styles.participantName, p.isMe && { color: activeColors.tint, fontWeight: '900' }]}>{p.name}{p.isMe ? ' (You)' : ''}</Text>
-                                                                {p.phone && <Text style={styles.participantPhone}>{p.phone}</Text>}
+                                                                <Text style={[
+                                                                    styles.participantName,
+                                                                    p.isMe && { color: activeColors.tint, fontWeight: '900' }
+                                                                ]}>
+                                                                    {p.name}{p.isMe ? ' (You)' : ''}
+                                                                </Text>
+                                                                {p.phone && (
+                                                                    <Text style={styles.participantPhone}>{p.phone}</Text>
+                                                                )}
                                                             </View>
                                                         </View>
-                                                        <Text style={[styles.participantShare, { color: p.paid ? activeColors.success : activeColors.text }]}>
-                                                            {symbol}{p.share.toLocaleString()}
+                                                        <Text style={[
+                                                            styles.participantShare,
+                                                            { color: p.paid ? activeColors.success : activeColors.text }
+                                                        ]}>
+                                                            {symbol}{p.share.toLocaleString('en-IN')}
                                                         </Text>
                                                     </TouchableOpacity>
                                                 ))}
 
-                                                {/* Unpaid total */}
                                                 {unpaidTotal > 0 && (
                                                     <View style={styles.unpaidTotalRow}>
-                                                        <Text style={[styles.unpaidTotalLabel, { color: activeColors.warning }]}>Remaining to collect</Text>
-                                                        <Text style={[styles.unpaidTotalValue, { color: activeColors.warning }]}>{symbol}{unpaidTotal.toLocaleString()}</Text>
+                                                        <Text style={[styles.unpaidTotalLabel, { color: activeColors.warning }]}>
+                                                            Remaining to collect
+                                                        </Text>
+                                                        <Text style={[styles.unpaidTotalValue, { color: activeColors.warning }]}>
+                                                            {symbol}{unpaidTotal.toLocaleString('en-IN')}
+                                                        </Text>
                                                     </View>
                                                 )}
 
-                                                {/* Actions row */}
                                                 <View style={styles.actionsRow}>
                                                     <TouchableOpacity
                                                         style={[styles.actionBtn, { backgroundColor: activeColors.tint + '15', borderColor: activeColors.tint + '30' }]}
@@ -292,14 +340,14 @@ export default function SplitBillsScreen() {
                                                         <Text style={[styles.actionBtnText, { color: activeColors.success }]}>Report</Text>
                                                     </TouchableOpacity>
                                                     <TouchableOpacity
-                                                        style={[styles.actionBtn, { flex: 0.5 }]}
+                                                        style={styles.actionBtnSm}
                                                         onPress={() => { setSelectedBill(bill); setIsModalVisible(true); }}
                                                     >
                                                         <ChevronRight size={14} color={activeColors.secondaryText} />
                                                         <Text style={[styles.actionBtnText, { color: activeColors.secondaryText }]}>Edit</Text>
                                                     </TouchableOpacity>
                                                     <TouchableOpacity
-                                                        style={[styles.actionBtn, { flex: 0.5, backgroundColor: activeColors.error + '15', borderColor: activeColors.error + '30' }]}
+                                                        style={[styles.actionBtnSm, { backgroundColor: activeColors.error + '15', borderColor: activeColors.error + '30' }]}
                                                         onPress={() => handleDelete(bill)}
                                                     >
                                                         <Trash2 size={14} color={activeColors.error} />
@@ -313,7 +361,9 @@ export default function SplitBillsScreen() {
                             })}
                             {splitBills.length === 0 && (
                                 <View style={styles.emptyContainer}>
-                                    <Users color={activeColors.secondaryText} size={40} opacity={0.3} />
+                                    <View style={{ opacity: 0.3 }}>
+                                        <Users color={activeColors.secondaryText} size={40} />
+                                    </View>
                                     <Text style={styles.emptyText}>No split bills yet</Text>
                                     <Text style={styles.emptySub}>Tap + to split an expense with friends</Text>
                                 </View>
@@ -321,21 +371,25 @@ export default function SplitBillsScreen() {
                         </>
                     ) : (
                         <>
-                            <Text style={styles.listSectionTitle}>Outstanding Settlements ({settlements.length})</Text>
-                            {settlements.map((s, i) => (
-                                <View key={i} style={styles.card}>
-                                    <View style={[styles.cardHeader, { alignItems: 'center' }]}>
+                            <Text style={styles.listSectionTitle}>
+                                Outstanding Settlements ({settlements.length})
+                            </Text>
+                            {settlements.map((s) => (
+                                <View key={s.name} style={styles.card}>
+                                    <View style={styles.cardHeader}>
                                         <View style={styles.cardLeft}>
                                             <View style={[styles.iconContainer, { backgroundColor: activeColors.notification + '15' }]}>
-                                                <Text style={{ fontSize: 16, fontWeight: '900', color: activeColors.notification }}>{s.name[0].toUpperCase()}</Text>
+                                                <Text style={styles.avatarText}>{s.name[0].toUpperCase()}</Text>
                                             </View>
                                             <View>
                                                 <Text style={styles.billTitle}>{s.name}</Text>
                                                 {s.phone && <Text style={styles.dateText}>{s.phone}</Text>}
                                             </View>
                                         </View>
-                                        <View style={{ alignItems: 'flex-end' }}>
-                                            <Text style={[styles.billAmount, { color: activeColors.notification }]}>{symbol}{s.share.toLocaleString()}</Text>
+                                        <View style={styles.settlementCardRight}>
+                                            <Text style={[styles.billAmount, { color: activeColors.notification }]}>
+                                                {symbol}{s.share.toLocaleString('en-IN')}
+                                            </Text>
                                             <Text style={styles.statusText}>Owes you</Text>
                                         </View>
                                     </View>
@@ -343,7 +397,9 @@ export default function SplitBillsScreen() {
                             ))}
                             {settlements.length === 0 && (
                                 <View style={styles.emptyContainer}>
-                                    <Check color={activeColors.success} size={40} opacity={0.3} />
+                                    <View style={{ opacity: 0.3 }}>
+                                        <Check color={activeColors.success} size={40} />
+                                    </View>
                                     <Text style={styles.emptyText}>All settled up!</Text>
                                     <Text style={styles.emptySub}>No one owes you money right now.</Text>
                                 </View>
@@ -353,8 +409,10 @@ export default function SplitBillsScreen() {
                 </View>
 
                 {currentTheme === 'heart' && (
-                    <View style={{ alignItems: 'center', marginTop: 20 }}>
-                        <Flower color={activeColors.tint} size={32} opacity={0.2} />
+                    <View style={styles.flowerFooter}>
+                        <View style={{ opacity: 0.2 }}>
+                            <Flower color={activeColors.tint} size={32} />
+                        </View>
                     </View>
                 )}
             </ScrollView>
@@ -367,15 +425,15 @@ export default function SplitBillsScreen() {
 
             {/* Settlement Account Modal */}
             <Modal
-                visible={!!settlementModal?.visible}
+                visible={settlementParticipantId !== null}
                 transparent
                 animationType="fade"
-                onRequestClose={() => setSettlementModal(null)}
+                onRequestClose={() => setSettlementParticipantId(null)}
             >
                 <TouchableOpacity
                     style={styles.modalOverlay}
                     activeOpacity={1}
-                    onPress={() => setSettlementModal(null)}
+                    onPress={() => setSettlementParticipantId(null)}
                 >
                     <TouchableOpacity
                         style={styles.settlementModalContent}
@@ -391,89 +449,163 @@ export default function SplitBillsScreen() {
                                     key={acc.id}
                                     style={styles.settlementAccountItem}
                                     onPress={() => {
-                                        const pid = settlementModal?.participantId;
-                                        if (pid) {
+                                        if (settlementParticipantId) {
                                             markParticipantPaid.mutate({
-                                                participantId: pid,
+                                                participantId: settlementParticipantId,
                                                 paid: true,
                                                 toAccountId: acc.id
                                             });
                                         }
-                                        setSettlementModal(null);
+                                        setSettlementParticipantId(null);
                                     }}
                                 >
                                     <View style={[styles.settlementIcon, { backgroundColor: activeColors.tint + '15' }]}>
                                         <Check size={18} color={activeColors.tint} />
                                     </View>
                                     <Text style={styles.settlementAccountName}>{acc.name}</Text>
-                                    <Text style={styles.settlementAccountBalance}>{symbol}{acc.balance.toLocaleString()}</Text>
+                                    <Text style={styles.settlementAccountBalance}>
+                                        {symbol}{acc.balance.toLocaleString('en-IN')}
+                                    </Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
 
                         <TouchableOpacity
                             style={styles.settlementCancelBtn}
-                            onPress={() => setSettlementModal(null)}
+                            onPress={() => setSettlementParticipantId(null)}
                         >
                             <Text style={styles.settlementCancelText}>Cancel</Text>
                         </TouchableOpacity>
                     </TouchableOpacity>
                 </TouchableOpacity>
             </Modal>
+
+            <ConfirmationModal
+                visible={isDeleteModalVisible}
+                title="Delete Split Bill"
+                description={`Delete "${billToDelete?.title}"? All associated transactions will also be deleted. This cannot be undone.`}
+                onConfirm={confirmDelete}
+                onCancel={() => {
+                    setIsDeleteModalVisible(false);
+                    setBillToDelete(null);
+                }}
+                confirmText="Delete"
+                type="danger"
+            />
         </View>
     );
 }
 
+
 const getStyles = (colors: any, insets: any) => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? insets.top : 16, paddingBottom: 10 },
+    header: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10,
+    },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     title: { fontSize: FONT.h1, fontWeight: '900', color: colors.text },
     subtitle: { fontSize: FONT.xxs, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.5 },
-    addBtn: { ...BTN.md, backgroundColor: colors.tint, justifyContent: 'center', alignItems: 'center', borderRadius: BTN.md.borderRadius, elevation: 4, shadowColor: colors.tint, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+    addBtn: {
+        width: 38, height: 38, backgroundColor: colors.tint,
+        justifyContent: 'center', alignItems: 'center', borderRadius: 12,
+        elevation: 4, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8,
+    },
+    scrollContent: { paddingBottom: 100 },
     summaryGrid: { flexDirection: 'row', padding: 20, gap: 10 },
-    summaryCard: { flex: 1, padding: 16, borderRadius: RADIUS.xl, position: 'relative', overflow: 'hidden' },
+    summaryCard: { flex: 1, padding: 16, borderRadius: RADIUS.xl, overflow: 'hidden' },
     summaryLabel: { color: 'rgba(255,255,255,0.7)', fontSize: FONT.xxs, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
     summaryValue: { color: '#fff', fontSize: FONT.h3, fontWeight: '900', marginTop: 4 },
-    tabContainer: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 16, backgroundColor: colors.card, borderRadius: RADIUS.lg, padding: 4, borderWidth: 1, borderColor: colors.border },
+    tabContainer: {
+        flexDirection: 'row', marginHorizontal: 20, marginBottom: 16,
+        backgroundColor: colors.card, borderRadius: RADIUS.lg,
+        padding: 4, borderWidth: 1, borderColor: colors.border,
+    },
     tab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: RADIUS.md },
-    activeTab: { backgroundColor: colors.background, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2 },
+    activeTab: {
+        backgroundColor: colors.background, elevation: 2,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2,
+    },
     tabText: { fontSize: FONT.xs, fontWeight: '700', color: colors.secondaryText },
     activeTabText: { color: colors.tint, fontWeight: '800' },
     listSection: { paddingHorizontal: 20 },
-    listSectionTitle: { fontSize: FONT.xxs, fontWeight: '900', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14, paddingLeft: 4 },
-    card: { backgroundColor: colors.card, borderRadius: RADIUS.xl, marginBottom: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+    listSectionTitle: {
+        fontSize: FONT.xxs, fontWeight: '900', color: colors.secondaryText,
+        textTransform: 'uppercase', letterSpacing: 1, marginBottom: 14, paddingLeft: 4,
+    },
+    card: {
+        backgroundColor: colors.card, borderRadius: RADIUS.xl,
+        marginBottom: 12, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+    },
     cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: 16 },
     cardLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, flex: 1 },
+    cardTitleBlock: { flex: 1 },
+    cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+    cardRight: { alignItems: 'flex-end', gap: 4 },
+    settlementCardRight: { alignItems: 'flex-end' },
     iconContainer: { width: 40, height: 40, borderRadius: RADIUS.md, justifyContent: 'center', alignItems: 'center' },
+    avatarText: { fontSize: 16, fontWeight: '900', color: colors.notification },
     billTitle: { fontSize: FONT.body, fontWeight: '800', color: colors.text },
     dateText: { fontSize: FONT.xxs, fontWeight: '600', color: colors.secondaryText },
     billAmount: { fontSize: FONT.h3, fontWeight: '900', color: colors.text },
     statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.sm },
     statusText: { fontSize: FONT.xxs, fontWeight: '800', textTransform: 'uppercase' },
-    categoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.tint + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.sm },
+    categoryBadge: {
+        flexDirection: 'row', alignItems: 'center', gap: 3,
+        backgroundColor: colors.tint + '15', paddingHorizontal: 6,
+        paddingVertical: 2, borderRadius: RADIUS.sm,
+    },
     categoryBadgeText: { fontSize: FONT.tiny, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-    expandedSection: { borderTopWidth: 1, borderTopColor: colors.border, padding: 16, gap: 0 },
+    expandedSection: { borderTopWidth: 1, borderTopColor: colors.border, padding: 16 },
     notesText: { fontSize: FONT.sm, fontWeight: '500', color: colors.secondaryText, marginBottom: 12, fontStyle: 'italic' },
-    participantRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border + '40' },
+    participantRow: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border + '40',
+    },
+    participantLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     paidCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, justifyContent: 'center', alignItems: 'center' },
     participantName: { fontSize: FONT.body, fontWeight: '700', color: colors.text },
     participantPhone: { fontSize: FONT.xs, color: colors.secondaryText, fontWeight: '500' },
     participantShare: { fontSize: FONT.body, fontWeight: '800' },
-    unpaidTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 2 },
+    unpaidTotalRow: {
+        flexDirection: 'row', justifyContent: 'space-between',
+        alignItems: 'center', paddingTop: 10, marginTop: 2,
+    },
     unpaidTotalLabel: { fontSize: FONT.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
     unpaidTotalValue: { fontSize: FONT.body, fontWeight: '900' },
     actionsRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-    actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, padding: 10, borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+    actionBtn: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 5, padding: 10, borderRadius: RADIUS.md,
+        borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
+    },
+    actionBtnSm: {
+        flex: 0.5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 5, padding: 10, borderRadius: RADIUS.md,
+        borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
+    },
     actionBtnText: { fontSize: FONT.xs, fontWeight: '800' },
     emptyContainer: { padding: 50, alignItems: 'center', gap: 8 },
     emptyText: { fontSize: FONT.body, fontWeight: '900', color: colors.text },
     emptySub: { fontSize: FONT.sm, fontWeight: '600', color: colors.secondaryText, textAlign: 'center' },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    settlementModalContent: { backgroundColor: colors.background, borderRadius: RADIUS.xl, width: '100%', maxWidth: 400, padding: 24, paddingBottom: 16 },
+    flowerFooter: { alignItems: 'center', marginTop: 20 },
+    modalOverlay: {
+        flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center', alignItems: 'center', padding: 20,
+    },
+    settlementModalContent: {
+        backgroundColor: colors.background, borderRadius: RADIUS.xl,
+        width: '100%', maxWidth: 400, padding: 24, paddingBottom: 16,
+    },
     settlementTitle: { fontSize: FONT.h3, fontWeight: '900', color: colors.text, marginBottom: 8 },
     settlementSubtitle: { fontSize: FONT.sm, fontWeight: '600', color: colors.secondaryText, marginBottom: 20 },
     settlementAccountList: { gap: 12, marginBottom: 20 },
-    settlementAccountItem: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: colors.card, borderRadius: RADIUS.lg, borderWidth: 1, borderColor: colors.border },
+    settlementAccountItem: {
+        flexDirection: 'row', alignItems: 'center', padding: 16,
+        backgroundColor: colors.card, borderRadius: RADIUS.lg,
+        borderWidth: 1, borderColor: colors.border,
+    },
     settlementIcon: { width: 40, height: 40, borderRadius: RADIUS.md, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
     settlementAccountName: { flex: 1, fontSize: FONT.body, fontWeight: '700', color: colors.text },
     settlementAccountBalance: { fontSize: FONT.sm, fontWeight: '800', color: colors.secondaryText },

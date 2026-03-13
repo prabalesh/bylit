@@ -1,19 +1,20 @@
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert } from 'react-native';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
 import { Repository } from '../../src/services/repository';
-import { Budget, Transaction, Category, Account, Settings } from '../../src/types/api';
+import { Budget } from '../../src/types/api';
 import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
 import { Plus, Target, Wallet, AlertCircle, Pencil, Trash2 } from 'lucide-react-native';
 import BudgetModal from '../../src/components/BudgetModal';
-import TransactionModal from '../../src/components/TransactionModal';
 import { getCurrencySymbol } from '../../src/constants/Currency';
 import { useConfirm } from '../../src/providers/ConfirmProvider';
 import { useToast } from '../../src/providers/ToastProvider';
+import { useBudgets, useTransactions, useCategories, useAccounts, useSettings } from '../../src/hooks/useData';
+
 
 export default function BudgetsScreen() {
-    const { currentTheme, fontScale, iconScale } = useTheme();
+    const { currentTheme } = useTheme();
     const activeColors = Colors[currentTheme];
     const { showConfirm } = useConfirm();
     const { showToast } = useToast();
@@ -21,30 +22,11 @@ export default function BudgetsScreen() {
     const [isBudgetModalVisible, setIsBudgetModalVisible] = useState(false);
     const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null);
 
-    const { data: budgets = [], isLoading: budgetsLoading, refetch: refetchBudgets, isRefetching: isRefetchingBudgets } = useQuery<Budget[]>({
-        queryKey: ['budgets'],
-        queryFn: () => Repository.getBudgets()
-    });
-
-    const { data: transactions = [] } = useQuery<Transaction[]>({
-        queryKey: ['transactions'],
-        queryFn: () => Repository.getTransactions()
-    });
-
-    const { data: categories = [] } = useQuery<Category[]>({
-        queryKey: ['categories'],
-        queryFn: () => Repository.getCategories()
-    });
-
-    const { data: accounts = [] } = useQuery<Account[]>({
-        queryKey: ['accounts'],
-        queryFn: () => Repository.getAccounts()
-    });
-
-    const { data: settings } = useQuery<Settings>({
-        queryKey: ['settings'],
-        queryFn: () => Repository.getSettings() as any
-    });
+    const { data: budgets = [], isLoading: budgetsLoading, refetch: refetchBudgets, isRefetching: isRefetchingBudgets } = useBudgets();
+    const { data: transactions = [] } = useTransactions();
+    const { data: categories = [] } = useCategories();
+    const { data: accounts = [] } = useAccounts();
+    const { data: settings } = useSettings();
 
     const symbol = getCurrencySymbol(settings?.baseCurrency);
 
@@ -68,18 +50,31 @@ export default function BudgetsScreen() {
         }
     };
 
+    const handleOpenNew = () => {
+        setSelectedBudget(null);
+        setIsBudgetModalVisible(true);
+    };
+
+    const handleOpenEdit = (budget: Budget) => {
+        setSelectedBudget(budget);
+        setIsBudgetModalVisible(true);
+    };
+
     const styles = getStyles(activeColors);
 
-    const renderBudget = ({ item }: { item: Budget }) => {
+    const renderBudget = useCallback(({ item }: { item: Budget }) => {
         const category = categories.find(c => c.id === item.categoryId);
         const account = accounts.find(a => a.id === item.accountId);
 
-        // Calculate spending for this budget
+        // categoryId takes priority; accountId used only when categoryId is absent
         const spending = transactions
-            .filter(t => (item.categoryId ? t.categoryId === item.categoryId : t.accountId === item.accountId) && t.type === 'expense')
+            .filter(t =>
+                (item.categoryId ? t.categoryId === item.categoryId : t.accountId === item.accountId)
+                && t.type === 'expense'
+            )
             .reduce((acc, t) => acc + t.amount, 0);
 
-        const progress = Math.min(spending / item.monthlyLimit, 1);
+        const progress = item.monthlyLimit > 0 ? Math.min(spending / item.monthlyLimit, 1) : 0;
         const progressPercent = Math.round(progress * 100);
 
         return (
@@ -87,11 +82,10 @@ export default function BudgetsScreen() {
                 <View style={styles.budgetHeader}>
                     <View style={styles.budgetInfo}>
                         <View style={[styles.iconContainer, { backgroundColor: activeColors.tint + '15' }]}>
-                            {item.categoryId ? (
-                                <Target size={18} color={activeColors.tint} />
-                            ) : (
-                                <Wallet size={18} color={activeColors.tint} />
-                            )}
+                            {item.categoryId
+                                ? <Target size={18} color={activeColors.tint} />
+                                : <Wallet size={18} color={activeColors.tint} />
+                            }
                         </View>
                         <View>
                             <Text style={styles.budgetName}>{category?.name || account?.name || 'Unknown'}</Text>
@@ -100,7 +94,7 @@ export default function BudgetsScreen() {
                     </View>
                     <View style={styles.budgetActions}>
                         <TouchableOpacity
-                            onPress={() => { setSelectedBudget(item); setIsBudgetModalVisible(true); }}
+                            onPress={() => handleOpenEdit(item)}
                             style={styles.actionBtn}
                         >
                             <Pencil size={16} color={activeColors.secondaryText} />
@@ -116,16 +110,20 @@ export default function BudgetsScreen() {
 
                 <View style={styles.progressSection}>
                     <View style={styles.progressLabels}>
-                        <Text style={styles.spentText}>{symbol}{spending.toLocaleString()} spent</Text>
-                        <Text style={styles.limitText}>Limit: {symbol}{item.monthlyLimit.toLocaleString()}</Text>
+                        <Text style={styles.spentText}>{symbol}{spending.toLocaleString('en-IN')} spent</Text>
+                        <Text style={styles.limitText}>Limit: {symbol}{item.monthlyLimit.toLocaleString('en-IN')}</Text>
                     </View>
                     <View style={styles.progressBarBg}>
                         <View
                             style={[
                                 styles.progressBarFill,
                                 {
-                                    width: `${progressPercent}%`,
-                                    backgroundColor: progress > 0.9 ? activeColors.error : progress > 0.7 ? '#f59e0b' : activeColors.tint
+                                    width: `${progressPercent}%` as any,
+                                    backgroundColor: progress > 0.9
+                                        ? activeColors.error
+                                        : progress > 0.7
+                                            ? '#f59e0b'
+                                            : activeColors.tint
                                 }
                             ]}
                         />
@@ -142,7 +140,7 @@ export default function BudgetsScreen() {
                 </View>
             </View>
         );
-    };
+    }, [categories, accounts, transactions, symbol, activeColors, styles]);
 
     return (
         <View style={styles.container}>
@@ -151,10 +149,7 @@ export default function BudgetsScreen() {
                     <Text style={styles.title}>Planning</Text>
                     <Text style={styles.subtitle}>Budget Management</Text>
                 </View>
-                <TouchableOpacity
-                    style={styles.addBtn}
-                    onPress={() => setIsBudgetModalVisible(true)}
-                >
+                <TouchableOpacity style={styles.addBtn} onPress={handleOpenNew}>
                     <Plus color={activeColors.tint} size={18} />
                     <Text style={styles.addBtnText}>New</Text>
                 </TouchableOpacity>
@@ -189,15 +184,26 @@ export default function BudgetsScreen() {
     );
 }
 
+
 const getStyles = (colors: any) => StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 },
+    topHeader: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10,
+    },
     title: { fontSize: 24, fontWeight: '900', color: colors.text },
     subtitle: { fontSize: 13, fontWeight: '700', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.5 },
-    addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.tint + '15', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: colors.tint + '30' },
+    addBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 6,
+        backgroundColor: colors.tint + '15', paddingHorizontal: 16, paddingVertical: 10,
+        borderRadius: 14, borderWidth: 1, borderColor: colors.tint + '30',
+    },
     addBtnText: { fontSize: 12, fontWeight: '800', color: colors.tint, textTransform: 'uppercase' },
     listContent: { padding: 20, paddingBottom: 120 },
-    budgetCard: { backgroundColor: colors.card, padding: 20, borderRadius: 24, marginBottom: 16, borderWidth: 1, borderColor: colors.border },
+    budgetCard: {
+        backgroundColor: colors.card, padding: 20, borderRadius: 24,
+        marginBottom: 16, borderWidth: 1, borderColor: colors.border,
+    },
     budgetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
     budgetInfo: { flexDirection: 'row', gap: 12, alignItems: 'center' },
     iconContainer: { padding: 10, borderRadius: 12 },
@@ -217,6 +223,5 @@ const getStyles = (colors: any) => StyleSheet.create({
     warningText: { fontSize: 11, fontWeight: '800', color: colors.error, textTransform: 'uppercase' },
     emptyContainer: { padding: 40, alignItems: 'center' },
     emptyText: { fontSize: 16, fontWeight: '900', color: colors.text, textAlign: 'center' },
-    emptySubText: { fontSize: 12, fontWeight: '600', color: colors.secondaryText, textAlign: 'center', marginTop: 8 }
+    emptySubText: { fontSize: 12, fontWeight: '600', color: colors.secondaryText, textAlign: 'center', marginTop: 8 },
 });
-

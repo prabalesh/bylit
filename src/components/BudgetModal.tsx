@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, Modal, TouchableOpacity, ScrollView, Platform, Alert, BackHandler } from 'react-native';
-import { X, Trash2, Target, Wallet, Heart, Flower, AlertCircle, Check } from 'lucide-react-native';
-import { Budget, Category, Account } from '../types/api';
+import { View, Text, StyleSheet, TextInput, Modal, TouchableOpacity, ScrollView, Platform, BackHandler } from 'react-native';
+import { X, Trash2, Target, Wallet } from 'lucide-react-native';
+import { Budget } from '../types/api';
 import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
 import { useToast } from '../providers/ToastProvider';
 import { useConfirm } from '../providers/ConfirmProvider';
 import { useCategories, useAccounts, useSettings, useSaveBudget, useDeleteBudget } from '../hooks/useData';
+
 
 interface BudgetModalProps {
     visible: boolean;
@@ -14,8 +15,9 @@ interface BudgetModalProps {
     budget?: Budget | null;
 }
 
+
 export default function BudgetModal({ visible, onClose, budget = null }: BudgetModalProps) {
-    const { currentTheme } = useTheme();
+    const { currentTheme, fontScale, iconScale } = useTheme();
     const { showToast } = useToast();
     const { showConfirm } = useConfirm();
     const activeColors = Colors[currentTheme];
@@ -32,20 +34,14 @@ export default function BudgetModal({ visible, onClose, budget = null }: BudgetM
     const saveMutation = useSaveBudget();
     const deleteMutation = useDeleteBudget();
 
+    // BackHandler is Android-only
     useEffect(() => {
+        if (Platform.OS !== 'android') return;
         const backAction = () => {
-            if (visible) {
-                onClose();
-                return true;
-            }
+            if (visible) { onClose(); return true; }
             return false;
         };
-
-        const backHandler = BackHandler.addEventListener(
-            'hardwareBackPress',
-            backAction,
-        );
-
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
         return () => backHandler.remove();
     }, [visible, onClose]);
 
@@ -74,13 +70,9 @@ export default function BudgetModal({ visible, onClose, budget = null }: BudgetM
             confirmText: 'Delete',
             type: 'danger'
         });
-
         if (confirmed) {
             deleteMutation.mutate(budget!.id, {
-                onSuccess: () => {
-                    showToast('Budget deleted', 'success');
-                    onClose();
-                },
+                onSuccess: () => { showToast('Budget deleted', 'success'); onClose(); },
                 onError: () => showToast('Failed to delete budget', 'error')
             });
         }
@@ -104,8 +96,7 @@ export default function BudgetModal({ visible, onClose, budget = null }: BudgetM
         saveMutation.mutate({
             id: budget?.id,
             monthlyLimit: numLimit,
-            categoryId: (budgetType === 'category' ? categoryId : undefined) as any,
-            accountId: (budgetType === 'account' ? accountId : undefined) as any,
+            ...(budgetType === 'category' ? { categoryId } : { accountId }),
         }, {
             onSuccess: () => {
                 showToast(budget ? 'Budget plan updated' : 'Budget plan created', 'success');
@@ -115,17 +106,15 @@ export default function BudgetModal({ visible, onClose, budget = null }: BudgetM
         });
     };
 
-    const { fontScale, iconScale } = useTheme();
     const styles = getStyles(activeColors, fontScale);
 
     return (
         <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
+            {/* Ensure colors.background is always a 6-digit hex for the opacity concat to work correctly */}
             <View style={[styles.modalOverlay, { backgroundColor: activeColors.background + '80' }]}>
                 <View style={styles.container}>
                     <View style={styles.header}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={styles.title}>{budget ? 'Edit Budget' : 'New Budget'}</Text>
-                        </View>
+                        <Text style={styles.title}>{budget ? 'Edit Budget' : 'New Budget'}</Text>
                         <View style={styles.headerRight}>
                             {budget && (
                                 <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
@@ -204,7 +193,7 @@ export default function BudgetModal({ visible, onClose, budget = null }: BudgetM
                             </View>
                         )}
 
-                        <View style={{ height: 40 }} />
+                        <View style={styles.scrollSpacer} />
                     </ScrollView>
 
                     <View style={styles.footer}>
@@ -224,6 +213,7 @@ export default function BudgetModal({ visible, onClose, budget = null }: BudgetM
     );
 }
 
+
 const getStyles = (colors: any, fontScale: any) => StyleSheet.create({
     container: {
         flex: 1,
@@ -233,35 +223,59 @@ const getStyles = (colors: any, fontScale: any) => StyleSheet.create({
         borderTopRightRadius: 32,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: colors.border
+        borderColor: colors.border,
     },
     modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border },
+    header: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
     headerRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
     title: { fontSize: fontScale.title, fontWeight: '900', color: colors.text },
     closeBtn: { padding: 6, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
     deleteBtn: { padding: 6, backgroundColor: colors.error + '10', borderRadius: 12, borderWidth: 1, borderColor: colors.error + '20' },
     content: { flex: 1, padding: 20 },
-    typeSelector: { flexDirection: 'row', backgroundColor: colors.card, borderRadius: 18, marginBottom: 24, padding: 4, borderWidth: 1, borderColor: colors.border },
-    typeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 14, flexDirection: 'row', justifyContent: 'center', gap: 8 },
-    typeBtnActive: { backgroundColor: colors.tint, elevation: 4, shadowColor: colors.tint, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8 },
-    typeBtnText: { fontSize: fontScale.label + 1, fontWeight: '800', color: colors.secondaryText, textTransform: 'uppercase', letterSpacing: 0.5 },
+    typeSelector: {
+        flexDirection: 'row', backgroundColor: colors.card, borderRadius: 18,
+        marginBottom: 24, padding: 4, borderWidth: 1, borderColor: colors.border,
+    },
+    typeBtn: {
+        flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 14,
+        flexDirection: 'row', justifyContent: 'center', gap: 8,
+    },
+    typeBtnActive: {
+        backgroundColor: colors.tint, elevation: 4, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8,
+    },
+    typeBtnText: {
+        fontSize: fontScale.label + 1, fontWeight: '800', color: colors.secondaryText,
+        textTransform: 'uppercase', letterSpacing: 0.5,
+    },
     typeBtnTextActive: { color: '#ffffff' },
     inputGroup: { marginBottom: 24 },
-    label: { fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase', color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1 },
-    input: { backgroundColor: colors.card, padding: 14, borderRadius: 16, fontSize: fontScale.body + 1, fontWeight: '700', color: colors.text, borderWidth: 1, borderColor: colors.border },
-    inputLarge: { backgroundColor: colors.card, padding: 20, borderRadius: 20, fontSize: fontScale.input, fontWeight: '900', color: colors.tint, borderWidth: 1, borderColor: colors.border, textAlign: 'center' },
+    label: {
+        fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase',
+        color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1,
+    },
+    inputLarge: {
+        backgroundColor: colors.card, padding: 20, borderRadius: 20,
+        fontSize: fontScale.input, fontWeight: '900', color: colors.tint,
+        borderWidth: 1, borderColor: colors.border, textAlign: 'center',
+    },
     chipScroll: { flexDirection: 'row', paddingVertical: 4 },
-    chip: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.card, borderRadius: 14, marginRight: 10, borderWidth: 1, borderColor: colors.border },
+    chip: {
+        paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.card,
+        borderRadius: 14, marginRight: 10, borderWidth: 1, borderColor: colors.border,
+    },
     chipActive: { backgroundColor: colors.tint + '15', borderColor: colors.tint },
     chipText: { fontSize: fontScale.body - 1, fontWeight: '700', color: colors.secondaryText },
     chipTextActive: { color: colors.tint },
-    footer: {
-        padding: 20,
-        backgroundColor: colors.card,
-        borderTopWidth: 1,
-        borderTopColor: colors.border
+    scrollSpacer: { height: 40 },
+    footer: { padding: 20, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.border },
+    saveBtn: {
+        backgroundColor: colors.tint, padding: 16, borderRadius: 20, alignItems: 'center',
+        elevation: 8, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12,
     },
-    saveBtn: { backgroundColor: colors.tint, padding: 16, borderRadius: 20, alignItems: 'center', elevation: 8, shadowColor: colors.tint, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12 },
-    saveBtnText: { color: '#ffffff', fontSize: fontScale.body + 1, fontWeight: '900' }
+    saveBtnText: { color: '#ffffff', fontSize: fontScale.body + 1, fontWeight: '900' },
 });

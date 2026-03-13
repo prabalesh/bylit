@@ -173,6 +173,8 @@ export const useSaveSplitBill = () => {
             Repository.saveSplitBill(bill, participants),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['splitBills'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['accounts'] });
         },
     });
 };
@@ -183,6 +185,8 @@ export const useDeleteSplitBill = () => {
         mutationFn: (id: string) => Repository.deleteSplitBill(id),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['splitBills'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] });
+            queryClient.invalidateQueries({ queryKey: ['accounts'] });
         },
     });
 };

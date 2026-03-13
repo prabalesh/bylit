@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TextInput, Modal, TouchableOpacity,
-    FlatList, ActivityIndicator, Platform
+    FlatList, ActivityIndicator
 } from 'react-native';
 import * as Contacts from 'expo-contacts';
 import { X, Search, Users, ChevronRight } from 'lucide-react-native';
 import { useToast } from '../providers/ToastProvider';
+
 
 interface ContactPickerProps {
     visible: boolean;
@@ -15,20 +16,14 @@ interface ContactPickerProps {
     insets: any;
 }
 
+
 export default function ContactPickerModal({ visible, onClose, onSelect, colors, insets }: ContactPickerProps) {
     const [contacts, setContacts] = useState<Contacts.Contact[]>([]);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(false);
     const { showToast } = useToast();
 
-    useEffect(() => {
-        if (visible) {
-            loadContacts();
-            setSearch('');
-        }
-    }, [visible]);
-
-    const loadContacts = async () => {
+    const loadContacts = useCallback(async () => {
         setLoading(true);
         try {
             const { status } = await Contacts.requestPermissionsAsync();
@@ -48,16 +43,23 @@ export default function ContactPickerModal({ visible, onClose, onSelect, colors,
         } finally {
             setLoading(false);
         }
-    };
+    }, [showToast, onClose]);
+
+    useEffect(() => {
+        if (visible) {
+            loadContacts();
+            setSearch('');
+        }
+    }, [visible, loadContacts]);
 
     const filtered = useMemo(() =>
-        contacts.filter(c =>
-            c.name?.toLowerCase().includes(search.toLowerCase())
-        ).slice(0, 50),
+        contacts
+            .filter(c => c.name?.toLowerCase().includes(search.toLowerCase()))
+            .slice(0, 50),
         [contacts, search]
     );
 
-    const pickerStyles = getStyles(colors, insets);
+    const pickerStyles = useMemo(() => getStyles(colors, insets), [colors, insets]);
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -95,33 +97,34 @@ export default function ContactPickerModal({ visible, onClose, onSelect, colors,
                         </View>
                     ) : filtered.length === 0 ? (
                         <View style={pickerStyles.empty}>
-                            <Users size={40} color={colors.secondaryText} opacity={0.4} />
+                            <View style={{ opacity: 0.4 }}>
+                                <Users size={40} color={colors.secondaryText} />
+                            </View>
                             <Text style={pickerStyles.emptyText}>No contacts found</Text>
-                            <Text style={pickerStyles.emptySubText}>{search ? 'Try a different name' : 'Your contacts will appear here'}</Text>
+                            <Text style={pickerStyles.emptySubText}>
+                                {search ? 'Try a different name' : 'Your contacts will appear here'}
+                            </Text>
                         </View>
                     ) : (
                         <FlatList
                             data={filtered}
                             keyExtractor={(item, index) => (item as any).id != null ? String((item as any).id) : String(index)}
                             renderItem={({ item }) => {
-                                const initials = item.name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() ?? '?';
+                                const initials = item.name
+                                    ?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() ?? '?';
                                 const phone = item.phoneNumbers?.[0]?.number;
                                 return (
                                     <TouchableOpacity
                                         style={pickerStyles.item}
                                         onPress={() => {
-                                            onSelect({
-                                                name: item.name!,
-                                                phone,
-                                                id: (item as any).id
-                                            });
+                                            onSelect({ name: item.name ?? '', phone, id: (item as any).id });
                                             onClose();
                                         }}
                                     >
                                         <View style={pickerStyles.avatar}>
                                             <Text style={pickerStyles.avatarText}>{initials}</Text>
                                         </View>
-                                        <View style={{ flex: 1 }}>
+                                        <View style={pickerStyles.itemInfo}>
                                             <Text style={pickerStyles.name}>{item.name}</Text>
                                             {phone && <Text style={pickerStyles.phone}>{phone}</Text>}
                                         </View>
@@ -139,6 +142,7 @@ export default function ContactPickerModal({ visible, onClose, onSelect, colors,
     );
 }
 
+
 const getStyles = (colors: any, insets: any) => StyleSheet.create({
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
     sheet: {
@@ -150,14 +154,37 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
     },
-    handle: { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 8 },
-    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
+    handle: {
+        width: 36, height: 4, backgroundColor: colors.border,
+        borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 8,
+    },
+    headerRow: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 20, paddingVertical: 12,
+    },
     title: { fontSize: 18, fontWeight: '900', color: colors.text },
-    closeBtn: { padding: 6, backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
-    searchBox: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.card, marginHorizontal: 20, marginBottom: 12, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border },
+    closeBtn: {
+        padding: 6, backgroundColor: colors.card,
+        borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    },
+    searchBox: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: colors.card, marginHorizontal: 20, marginBottom: 12,
+        padding: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border,
+    },
     searchInput: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.text },
-    item: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: colors.border + '30' },
-    avatar: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.tint + '15', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.tint + '30' },
+    item: {
+        flexDirection: 'row', alignItems: 'center', gap: 12,
+        paddingVertical: 14, paddingHorizontal: 20,
+        borderBottomWidth: 1, borderBottomColor: colors.border + '30',
+    },
+    itemInfo: { flex: 1 },
+    avatar: {
+        width: 38, height: 38, borderRadius: 12,
+        backgroundColor: colors.tint + '15',
+        justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: colors.tint + '30',
+    },
     avatarText: { fontSize: 14, fontWeight: '900', color: colors.tint },
     name: { fontSize: 14, fontWeight: '700', color: colors.text },
     phone: { fontSize: 12, color: colors.secondaryText, fontWeight: '500' },

@@ -36,6 +36,9 @@ export interface Transaction {
     personName?: string;
     dueDate?: string;
     settledStatus?: boolean;
+    relatedId?: string;
+    accountName?: string;
+    balanceAfter?: number;
     createdAt: string;
     updatedAt: string;
 }

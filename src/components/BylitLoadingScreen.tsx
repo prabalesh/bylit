@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
@@ -6,7 +6,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Zap, Heart, Sparkles } from 'lucide-react-native';
 import * as SplashScreen from 'expo-splash-screen';
 
+
 const { width } = Dimensions.get('window');
+
 
 export default function BylitLoadingScreen() {
     const { currentTheme } = useTheme();
@@ -18,8 +20,11 @@ export default function BylitLoadingScreen() {
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0)).current;
 
+    const rotationLoop = useRef<Animated.CompositeAnimation | null>(null);
+    const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+
     useEffect(() => {
-        // Entry animation - Native Driver
+        // Entry animation
         Animated.parallel([
             Animated.timing(fadeAnim, {
                 toValue: 1,
@@ -45,17 +50,18 @@ export default function BylitLoadingScreen() {
         }).start();
 
         // Continuous rotation for the background sparkles
-        Animated.loop(
+        rotationLoop.current = Animated.loop(
             Animated.timing(rotateAnim, {
                 toValue: 1,
                 duration: 20000,
                 easing: Easing.linear,
                 useNativeDriver: true,
             })
-        ).start();
+        );
+        rotationLoop.current.start();
 
         // Logo pulse
-        Animated.loop(
+        pulseLoop.current = Animated.loop(
             Animated.sequence([
                 Animated.timing(pulseAnim, {
                     toValue: 1.05,
@@ -70,12 +76,19 @@ export default function BylitLoadingScreen() {
                     useNativeDriver: true,
                 }),
             ])
-        ).start();
+        );
+        pulseLoop.current.start();
 
-        // Hide static splash screen as soon as we mountain the animated loading screen
+        // Hide static splash screen as soon as we mount the animated loading screen
         SplashScreen.hideAsync().catch(() => {
             /* ignore errors in case it's already hidden */
         });
+
+        return () => {
+            rotationLoop.current?.stop();
+            pulseLoop.current?.stop();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const spin = rotateAnim.interpolate({
@@ -123,7 +136,7 @@ export default function BylitLoadingScreen() {
                             backgroundColor: activeColors.tint,
                             width: progressAnim.interpolate({
                                 inputRange: [0, 1],
-                                outputRange: ['0%', '70%']
+                                outputRange: ['0%', '100%']
                             })
                         }
                     ]} />
@@ -136,6 +149,7 @@ export default function BylitLoadingScreen() {
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {

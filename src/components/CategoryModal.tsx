@@ -1,19 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    Modal,
-    TouchableOpacity,
-    TextInput,
-    ScrollView,
-    KeyboardAvoidingView,
-    Platform,
-    ActivityIndicator,
-    BackHandler
+    View, Text, StyleSheet, Modal, TouchableOpacity, TextInput,
+    ScrollView, KeyboardAvoidingView, Platform, BackHandler
 } from 'react-native';
-import { X, Check, HelpCircle, Trash2, Heart, Flower } from 'lucide-react-native';
+import { X, Check, Trash2 } from 'lucide-react-native';
 import * as LucideIcons from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Category } from '../types/api';
 import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
@@ -21,11 +13,13 @@ import { useToast } from '../providers/ToastProvider';
 import { useConfirm } from '../providers/ConfirmProvider';
 import { useSaveCategory, useDeleteCategory } from '../hooks/useData';
 
+
 interface CategoryModalProps {
     visible: boolean;
     onClose: () => void;
     category?: Category | null;
 }
+
 
 const CATEGORY_COLORS = [
     '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#ef4444',
@@ -39,11 +33,10 @@ const COMMON_ICONS = [
     'Palette', 'Mic', 'Camera', 'Music', 'Wine'
 ];
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function CategoryModal({ visible, onClose, category }: CategoryModalProps) {
     const insets = useSafeAreaInsets();
-    const { currentTheme } = useTheme();
+    const { currentTheme, fontScale, iconScale } = useTheme();
     const { showToast } = useToast();
     const { showConfirm } = useConfirm();
     const activeColors = Colors[currentTheme];
@@ -51,25 +44,17 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
     const [name, setName] = useState('');
     const [colorHex, setColorHex] = useState(CATEGORY_COLORS[0]);
     const [iconSlug, setIconSlug] = useState(COMMON_ICONS[0]);
-    const [type, setType] = useState<'expense' | 'income' | 'all'>('expense');
+    const [type, setType] = useState<'expense' | 'income'>('expense');
 
     const saveMutation = useSaveCategory();
     const deleteMutation = useDeleteCategory();
 
     useEffect(() => {
         const backAction = () => {
-            if (visible) {
-                onClose();
-                return true;
-            }
+            if (visible) { onClose(); return true; }
             return false;
         };
-
-        const backHandler = BackHandler.addEventListener(
-            'hardwareBackPress',
-            backAction,
-        );
-
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
         return () => backHandler.remove();
     }, [visible, onClose]);
 
@@ -78,7 +63,7 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
             setName(category.name);
             setColorHex(category.colorHex);
             setIconSlug(category.iconSlug);
-            setType(category.type || 'expense');
+            setType(category.type === 'income' ? 'income' : 'expense');
         } else {
             setName('');
             setColorHex(CATEGORY_COLORS[0]);
@@ -88,6 +73,8 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
     }, [category, visible]);
 
     const handleDelete = async () => {
+        if (!category) return;
+
         const confirmed = await showConfirm({
             title: 'Delete Category',
             message: 'Are you sure you want to delete this category? This action cannot be undone.',
@@ -96,7 +83,7 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
         });
 
         if (confirmed) {
-            deleteMutation.mutate(category!.id, {
+            deleteMutation.mutate(category.id, {
                 onSuccess: () => {
                     showToast('Category deleted', 'success');
                     onClose();
@@ -111,7 +98,6 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
             showToast('Please enter a category name', 'error');
             return;
         }
-
         saveMutation.mutate({
             id: category?.id,
             name: name.trim(),
@@ -127,7 +113,6 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
         });
     };
 
-    const { fontScale, iconScale } = useTheme();
     const styles = getStyles(activeColors, insets, fontScale);
 
     return (
@@ -138,7 +123,7 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
                         <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
                             <X color={activeColors.secondaryText} size={iconScale.lg} />
                         </TouchableOpacity>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <View style={styles.headerCenter}>
                             <Text style={styles.title}>{category ? 'Edit Category' : 'New Category'}</Text>
                         </View>
                         <View style={styles.headerRight}>
@@ -152,9 +137,13 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
 
                     <KeyboardAvoidingView
                         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                        style={{ flex: 1 }}
+                        style={styles.keyboardView}
                     >
-                        <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                        <ScrollView
+                            style={styles.content}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                        >
                             {/* Type Selector */}
                             <View style={styles.inputGroup}>
                                 <Text style={styles.label}>Category Type</Text>
@@ -195,7 +184,11 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
                                     {CATEGORY_COLORS.map(color => (
                                         <TouchableOpacity
                                             key={color}
-                                            style={[styles.colorCircle, { backgroundColor: color }, colorHex === color && styles.selectedColor]}
+                                            style={[
+                                                styles.colorCircle,
+                                                { backgroundColor: color },
+                                                colorHex === color && styles.selectedColor
+                                            ]}
                                             onPress={() => setColorHex(color)}
                                         >
                                             {colorHex === color && <Check color="#fff" size={20} />}
@@ -231,7 +224,7 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
                                 </View>
                             </View>
 
-                            <View style={{ height: 40 }} />
+                            <View style={styles.scrollSpacer} />
                         </ScrollView>
                     </KeyboardAvoidingView>
 
@@ -242,7 +235,10 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
                             disabled={saveMutation.isPending}
                         >
                             <Text style={styles.saveBtnText}>
-                                {saveMutation.isPending ? 'Processing...' : category ? 'Update Category' : 'Create Category'}
+                                {saveMutation.isPending
+                                    ? 'Processing...'
+                                    : category ? 'Update Category' : 'Create Category'
+                                }
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -252,44 +248,70 @@ export default function CategoryModal({ visible, onClose, category }: CategoryMo
     );
 }
 
+
 const getStyles = (colors: any, insets: any, fontScale: any) => StyleSheet.create({
     container: {
-        flex: 1,
-        backgroundColor: colors.background,
+        flex: 1, backgroundColor: colors.background,
         marginTop: Platform.OS === 'ios' ? 100 : 40,
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: colors.border
+        borderTopLeftRadius: 32, borderTopRightRadius: 32,
+        overflow: 'hidden', borderWidth: 1, borderColor: colors.border,
     },
     modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border },
+    header: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     headerRight: { width: 40 },
     title: { fontSize: fontScale.title, fontWeight: '900', color: colors.text },
-    closeBtn: { padding: 6, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border },
-    deleteBtn: { padding: 6, backgroundColor: colors.error + '10', borderRadius: 12, borderWidth: 1, borderColor: colors.error + '20' },
+    closeBtn: {
+        padding: 6, backgroundColor: colors.card,
+        borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+    },
+    deleteBtn: {
+        padding: 6, backgroundColor: colors.error + '10',
+        borderRadius: 12, borderWidth: 1, borderColor: colors.error + '20',
+    },
+    keyboardView: { flex: 1 },
     content: { flex: 1, padding: 20 },
+    scrollSpacer: { height: 40 },
     inputGroup: { marginBottom: 24 },
-    label: { fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase', color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1 },
-    input: { backgroundColor: colors.card, padding: 14, borderRadius: 16, fontSize: fontScale.body + 1, fontWeight: '700', color: colors.text, borderWidth: 1, borderColor: colors.border },
+    label: {
+        fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase',
+        color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1,
+    },
+    input: {
+        backgroundColor: colors.card, padding: 14, borderRadius: 16,
+        fontSize: fontScale.body + 1, fontWeight: '700',
+        color: colors.text, borderWidth: 1, borderColor: colors.border,
+    },
     typeSelector: { flexDirection: 'row', gap: 12 },
-    typeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 18, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
+    typeBtn: {
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: 8, padding: 18, borderRadius: 20,
+        borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+    },
     typeDot: { width: 8, height: 8, borderRadius: 4 },
     typeText: { fontSize: fontScale.body, fontWeight: '700' },
     colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 32 },
     colorCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
     selectedColor: { borderWidth: 3, borderColor: 'rgba(255,255,255,0.5)' },
     iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
-    iconBox: { width: 62, height: 62, borderRadius: 20, backgroundColor: colors.card, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+    iconBox: {
+        width: 62, height: 62, borderRadius: 20, backgroundColor: colors.card,
+        justifyContent: 'center', alignItems: 'center',
+        borderWidth: 1, borderColor: colors.border,
+    },
     footer: {
         padding: 20,
         paddingBottom: insets.bottom > 0 ? insets.bottom : 20,
         backgroundColor: colors.card,
-        borderTopWidth: 1,
-        borderTopColor: colors.border
+        borderTopWidth: 1, borderTopColor: colors.border,
     },
-    saveBtn: { backgroundColor: colors.tint, padding: 16, borderRadius: 20, alignItems: 'center', elevation: 8, shadowColor: colors.tint, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12 },
-    saveBtnText: { color: '#ffffff', fontSize: fontScale.body + 1, fontWeight: '900' }
+    saveBtn: {
+        backgroundColor: colors.tint, padding: 16, borderRadius: 20, alignItems: 'center',
+        elevation: 8, shadowColor: colors.tint,
+        shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 12,
+    },
+    saveBtnText: { color: '#ffffff', fontSize: fontScale.body + 1, fontWeight: '900' },
 });
-

@@ -59,6 +59,7 @@ export const initDB = async () => {
             person_name TEXT,
             due_date TEXT,
             settled_status INTEGER NOT NULL DEFAULT 0,
+            related_id TEXT,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
@@ -146,6 +147,7 @@ export const initDB = async () => {
         `ALTER TABLE transactions ADD COLUMN person_name TEXT`,
         `ALTER TABLE transactions ADD COLUMN due_date TEXT`,
         `ALTER TABLE transactions ADD COLUMN settled_status INTEGER NOT NULL DEFAULT 0`,
+        `ALTER TABLE transactions ADD COLUMN related_id TEXT`,
         `ALTER TABLE transactions ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`,
         // Missing columns for categories
         `ALTER TABLE categories ADD COLUMN user_id TEXT`,

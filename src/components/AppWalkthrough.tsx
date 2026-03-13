@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Dimensions, Platform } from 'react-native';
-import { ChevronRight, Check, Wallet, PieChart, Bell, Zap, X } from 'lucide-react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, useWindowDimensions } from 'react-native';
+import { ChevronRight, Check, Wallet, PieChart, Bell, Zap } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { useTheme } from '../providers/ThemeContext';
 import * as SecureStore from 'expo-secure-store';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width, height } = Dimensions.get('window');
 
 const STEPS = [
     {
@@ -22,7 +21,7 @@ const STEPS = [
         color: '#f59e0b'
     },
     {
-        title: 'Smarts Analytics',
+        title: 'Smart Analytics',
         description: 'Visualize your spending patterns with beautiful charts and stay within your monthly budgets.',
         icon: PieChart,
         color: '#10b981'
@@ -35,26 +34,26 @@ const STEPS = [
     }
 ];
 
+
 export const AppWalkthrough: React.FC = () => {
     const [visible, setVisible] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
     const { currentTheme } = useTheme();
     const activeColors = Colors[currentTheme];
+    const { height } = useWindowDimensions();
 
     useEffect(() => {
-        checkFirstTime();
+        (async () => {
+            const hasSeenWalkthrough = await SecureStore.getItemAsync('has_seen_walkthrough');
+            if (!hasSeenWalkthrough) {
+                setVisible(true);
+            }
+        })();
     }, []);
-
-    const checkFirstTime = async () => {
-        const hasSeenWalkthrough = await SecureStore.getItemAsync('has_seen_walkthrough');
-        if (!hasSeenWalkthrough) {
-            setVisible(true);
-        }
-    };
 
     const handleNext = async () => {
         if (currentStep < STEPS.length - 1) {
-            setCurrentStep(currentStep + 1);
+            setCurrentStep(prev => prev + 1);
         } else {
             await finishWalkthrough();
         }
@@ -65,15 +64,13 @@ export const AppWalkthrough: React.FC = () => {
         setVisible(false);
     };
 
-    if (!visible) return null;
-
     const step = STEPS[currentStep];
     const Icon = step.icon;
 
     return (
         <Modal visible={visible} transparent animationType="fade">
             <View style={styles.overlay}>
-                <View style={[styles.container, { backgroundColor: activeColors.background }]}>
+                <View style={[styles.container, { backgroundColor: activeColors.background, maxHeight: height * 0.8 }]}>
                     <View style={styles.header}>
                         <View style={styles.progressContainer}>
                             {STEPS.map((_, i) => (
@@ -113,7 +110,10 @@ export const AppWalkthrough: React.FC = () => {
                             <Text style={styles.nextBtnText}>
                                 {currentStep === STEPS.length - 1 ? 'Get Started' : 'Next'}
                             </Text>
-                            {currentStep === STEPS.length - 1 ? <Check size={20} color="#fff" /> : <ChevronRight size={20} color="#fff" />}
+                            {currentStep === STEPS.length - 1
+                                ? <Check size={20} color="#fff" />
+                                : <ChevronRight size={20} color="#fff" />
+                            }
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -122,38 +122,38 @@ export const AppWalkthrough: React.FC = () => {
     );
 };
 
+
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.6)',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20
+        padding: 20,
     },
     container: {
         width: '100%',
         maxWidth: 400,
         borderRadius: 32,
         overflow: 'hidden',
-        maxHeight: height * 0.8
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 24,
-        paddingBottom: 0
+        paddingBottom: 0,
     },
     progressContainer: {
         flexDirection: 'row',
         gap: 6,
         flex: 1,
-        marginRight: 20
+        marginRight: 20,
     },
     progressBar: {
         height: 6,
         flex: 1,
-        borderRadius: 3
+        borderRadius: 3,
     },
     skipBtn: {
         paddingVertical: 6,
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
     },
     skipText: {
         fontSize: 14,
-        fontWeight: '700'
+        fontWeight: '700',
     },
     content: {
         alignItems: 'center',
@@ -174,24 +174,24 @@ const styles = StyleSheet.create({
         borderRadius: 80,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 32
+        marginBottom: 32,
     },
     title: {
         fontSize: 28,
         fontWeight: '900',
         textAlign: 'center',
-        marginBottom: 16
+        marginBottom: 16,
     },
     description: {
         fontSize: 16,
         fontWeight: '600',
         textAlign: 'center',
         lineHeight: 24,
-        opacity: 0.8
+        opacity: 0.8,
     },
     footer: {
         padding: 32,
-        paddingTop: 0
+        paddingTop: 0,
     },
     nextBtn: {
         height: 64,
@@ -204,11 +204,11 @@ const styles = StyleSheet.create({
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
-        shadowRadius: 8
+        shadowRadius: 8,
     },
     nextBtnText: {
         color: '#fff',
         fontSize: 18,
-        fontWeight: '800'
-    }
+        fontWeight: '800',
+    },
 });
