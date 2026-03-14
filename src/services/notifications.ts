@@ -11,7 +11,11 @@ try {
 }
 
 // Notification channel identifier for the daily reminder
-const DAILY_REMINDER_ID = 'bylit_daily_expense_reminder';
+// Notification channel identifiers
+const DAILY_REMINDER_ID_PREFIX = 'bylit_daily_reminder_';
+const CHANNEL_REMINDERS = 'reminders';
+const CHANNEL_TRANSACTIONS = 'transactions';
+const CHANNEL_LEND_BORROW = 'lend_borrow';
 
 // Configure how notifications appear when the app is in foreground
 if (Notifications) {
@@ -38,13 +42,21 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
     try {
         if (Platform.OS === 'android') {
-            const channel = await Notifications.setNotificationChannelAsync('bylit', {
-                name: 'Bylit Reminders',
-                importance: Notifications.AndroidImportance.DEFAULT,
+            await Notifications.setNotificationChannelAsync(CHANNEL_REMINDERS, {
+                name: 'Daily Reminders',
+                importance: Notifications.AndroidImportance.HIGH,
                 vibrationPattern: [0, 250, 250, 250],
                 lightColor: '#FF231F7C',
             });
-            console.log("✅ Notification channel set:", channel);
+            await Notifications.setNotificationChannelAsync(CHANNEL_TRANSACTIONS, {
+                name: 'Transaction Alerts',
+                importance: Notifications.AndroidImportance.DEFAULT,
+            });
+            await Notifications.setNotificationChannelAsync(CHANNEL_LEND_BORROW, {
+                name: 'Lend & Borrow Reminders',
+                importance: Notifications.AndroidImportance.MAX,
+            });
+            console.log("✅ Notification channels configured");
         }
 
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -62,17 +74,17 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
 /**
  * Schedule a daily repeating local notification at the given hour:minute.
- * Cancels any previously scheduled daily reminder first.
  */
 export async function scheduleDailyExpenseReminder(hour: number, minute: number): Promise<void> {
     if (!Notifications) return;
-    await cancelDailyReminder();
 
     const granted = await requestNotificationPermissions();
     if (!granted) return;
 
+    const identifier = `${DAILY_REMINDER_ID_PREFIX}${hour}_${minute}`;
+
     const result = await Notifications.scheduleNotificationAsync({
-        identifier: DAILY_REMINDER_ID,
+        identifier,
         content: {
             title: '💰 Time to log your expenses!',
             body: "Don't forget to add today's transactions in Bylit.",
@@ -84,21 +96,34 @@ export async function scheduleDailyExpenseReminder(hour: number, minute: number)
             hour,
             minute,
             repeats: true,
-            channelId: 'bylit',
+            channelId: CHANNEL_REMINDERS,
         },
     });
-    console.log("✅ Daily reminder scheduled:", result);
+    console.log(`✅ Daily reminder scheduled for ${hour}:${minute}:`, result);
 }
 
 /**
- * Cancel the scheduled daily expense reminder.
+ * Cancel a specific scheduled daily expense reminder.
  */
-export async function cancelDailyReminder(): Promise<void> {
+export async function cancelDailyReminder(hour: number, minute: number): Promise<void> {
     if (!Notifications) return;
     try {
-        await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_ID);
+        await Notifications.cancelScheduledNotificationAsync(`${DAILY_REMINDER_ID_PREFIX}${hour}_${minute}`);
     } catch {
         // Ignore if not found
+    }
+}
+
+/**
+ * Cancel all scheduled daily expense reminders.
+ */
+export async function cancelAllDailyReminders(): Promise<void> {
+    if (!Notifications) return;
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const notification of scheduled) {
+        if (notification.identifier.startsWith(DAILY_REMINDER_ID_PREFIX)) {
+            await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        }
     }
 }
 
@@ -122,11 +147,11 @@ export const sendLendBorrowNotification = async (type: 'lend' | 'borrow', name: 
         content: {
             title,
             body,
-            sound: true, // Added sound based on original sendLendBorrowNotification
-            data: { type, name }, // Simplified data based on provided edit
+            sound: true,
+            data: { type, name },
         },
         trigger: {
-            channelId: 'bylit',
+            channelId: CHANNEL_TRANSACTIONS,
         }, // Immediate
     });
 };
@@ -157,7 +182,7 @@ export const scheduleLendBorrowReminder = async (txId: string, type: 'lend' | 'b
         },
         trigger: {
             date: dueDate,
-            channelId: 'bylit',
+            channelId: CHANNEL_LEND_BORROW,
         },
     });
 };

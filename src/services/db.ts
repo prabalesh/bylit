@@ -19,6 +19,7 @@ export const initDB = async () => {
             reminder_enabled INTEGER NOT NULL DEFAULT 0,
             reminder_hour INTEGER NOT NULL DEFAULT 20,
             reminder_minute INTEGER NOT NULL DEFAULT 0,
+            reminder_times TEXT, -- JSON string of [{hour, minute}]
             sync_status TEXT NOT NULL DEFAULT 'synced' -- 'synced', 'pending'
         );
 
@@ -29,6 +30,8 @@ export const initDB = async () => {
             type TEXT NOT NULL,
             balance REAL NOT NULL DEFAULT 0,
             currency TEXT NOT NULL DEFAULT 'INR',
+            bank_type TEXT,
+            is_credit_card INTEGER DEFAULT 0,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
@@ -52,6 +55,7 @@ export const initDB = async () => {
             to_account_id TEXT,
             category_id TEXT,
             amount REAL NOT NULL DEFAULT 0,
+            remaining_amount REAL,
             currency TEXT NOT NULL DEFAULT 'INR',
             type TEXT NOT NULL DEFAULT 'expense',
             description TEXT,
@@ -154,6 +158,11 @@ export const initDB = async () => {
         `ALTER TABLE categories ADD COLUMN remote_id TEXT`,
         // Missing columns for accounts
         `ALTER TABLE accounts ADD COLUMN remote_id TEXT`,
+        `ALTER TABLE accounts ADD COLUMN bank_type TEXT`,
+        `ALTER TABLE accounts ADD COLUMN is_credit_card INTEGER DEFAULT 0`,
+        // Missing columns for transactions
+        `ALTER TABLE transactions ADD COLUMN remaining_amount REAL`,
+        `ALTER TABLE settings ADD COLUMN reminder_times TEXT`,
     ];
     for (const stmt of migrateColumns) {
         try { await db.execAsync(stmt); } catch { /* column already exists */ }

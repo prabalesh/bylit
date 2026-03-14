@@ -29,6 +29,8 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
 
     const [name, setName] = useState('');
     const [type, setType] = useState('Bank');
+    const [bankType, setBankType] = useState('Savings');
+    const [isCreditCard, setIsCreditCard] = useState(false);
     const [balance, setBalance] = useState('');
 
     const { data: settings } = useSettings();
@@ -51,10 +53,14 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
         if (account) {
             setName(account.name);
             setType(account.type);
+            setBankType(account.bankType || 'Savings');
+            setIsCreditCard(!!account.isCreditCard);
             setBalance(account.balance.toString());
         } else {
             setName('');
             setType('Bank');
+            setBankType('Savings');
+            setIsCreditCard(false);
             setBalance('');
         }
     }, [account, visible]);
@@ -91,6 +97,8 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             id: account?.id,
             name: name.trim(),
             type: type as any,
+            bankType: type === 'Bank' ? (bankType as any) : undefined,
+            isCreditCard: type === 'Credit' || isCreditCard,
             balance: numBalance,
         }, {
             onSuccess: () => {
@@ -146,6 +154,23 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
                                 onChangeText={setName}
                             />
                         </View>
+
+                        {type === 'Bank' && (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Bank Type</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                                    {['Savings', 'Current', 'Salary', 'Business'].map(bt => (
+                                        <TouchableOpacity
+                                            key={bt}
+                                            style={[styles.chip, bankType === bt && styles.chipActive]}
+                                            onPress={() => setBankType(bt)}
+                                        >
+                                            <Text style={[styles.chipText, bankType === bt && styles.chipTextActive]}>{bt}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        )}
 
                         <View style={styles.inputGroup}>
                             <Text style={styles.label}>Initial Balance</Text>
@@ -241,6 +266,11 @@ const getStyles = (colors: any, insets: any, fontScale: any) => StyleSheet.creat
         fontSize: fontScale.input, fontWeight: '900', color: colors.tint,
         borderWidth: 1, borderColor: colors.border, textAlign: 'center',
     },
+    chipScroll: { flexDirection: 'row', paddingVertical: 4 },
+    chip: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.card, borderRadius: 14, marginRight: 10, borderWidth: 1, borderColor: colors.border },
+    chipActive: { backgroundColor: colors.tint + '15', borderColor: colors.tint },
+    chipText: { fontSize: fontScale.body - 1, fontWeight: '700', color: colors.secondaryText },
+    chipTextActive: { color: colors.tint },
     scrollSpacer: { height: 40 },
     footer: {
         padding: 20,

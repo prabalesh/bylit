@@ -15,7 +15,7 @@ import { getCurrencySymbol } from '../constants/Currency';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sendLendBorrowNotification, scheduleLendBorrowReminder } from '../services/notifications';
 
-const TYPES = ['expense', 'income', 'lend', 'borrow', 'transfer'];
+const TYPES = ['expense', 'income', 'lend', 'borrow', 'transfer', 'credit bill'];
 
 interface TransactionModalProps {
     visible: boolean;
@@ -138,6 +138,9 @@ export default function TransactionModal({ visible, onClose, transaction = null,
         if (!amount || isNaN(numAmount) || numAmount <= 0) {
             newErrors.amount = 'Please enter a valid amount';
         }
+        if (date > new Date()) {
+            newErrors.date = 'Date cannot be in the future';
+        }
         if (!description.trim() && (type === 'expense' || type === 'income')) {
             newErrors.description = 'Please enter a description';
         }
@@ -213,27 +216,26 @@ export default function TransactionModal({ visible, onClose, transaction = null,
         }
 
         const numAmount = parseFloat(amount);
-        const offsetType = type === 'lend' ? 'income' : 'expense';
-        const settlementDescription = `Settlement: ${personName || description}`;
+        const remaining = transaction?.remainingAmount ?? numAmount;
 
-        // 1. Mark original as settled
         saveMutation.mutate({
             ...transaction!,
             settledStatus: true,
+            remainingAmount: 0,
         }, {
             onSuccess: () => {
-                // 2. Create offset transaction
+                const offsetType = type === 'lend' ? 'income' : 'expense';
                 saveMutation.mutate({
                     accountId: settlementAccountId,
-                    amount: numAmount,
+                    amount: remaining,
                     currency: settings?.baseCurrency || 'INR',
                     type: offsetType as any,
-                    description: settlementDescription,
+                    description: `Full Settlement: ${personName || description}`,
                     date: new Date().toISOString(),
-                    categoryId: categoryId || undefined,
+                    relatedId: transaction!.id,
                 }, {
                     onSuccess: () => {
-                        showToast('Transaction settled successfully', 'success');
+                        showToast('Transaction fully settled', 'success');
                         onClose();
                     },
                     onError: () => showToast('Failed to create settlement record', 'error')
@@ -241,6 +243,29 @@ export default function TransactionModal({ visible, onClose, transaction = null,
             },
             onError: () => showToast('Failed to update original transaction', 'error')
         });
+    };
+
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [isPartialPaymentMode, setIsPartialPaymentMode] = useState(false);
+
+    const handleRecordPayment = async () => {
+        const pAmount = parseFloat(paymentAmount);
+        if (isNaN(pAmount) || pAmount <= 0) {
+            showToast('Enter valid payment amount', 'error');
+            return;
+        }
+        if (!settlementAccountId) {
+            showToast('Select destination account', 'error');
+            return;
+        }
+
+        try {
+            await Repository.recordPayment(transaction!.id, pAmount, settlementAccountId, new Date().toISOString());
+            showToast('Payment recorded', 'success');
+            onClose();
+        } catch (err) {
+            showToast('Failed to record payment', 'error');
+        }
     };
 
     const handleCancelSettlement = async () => {
@@ -490,86 +515,100 @@ export default function TransactionModal({ visible, onClose, transaction = null,
                                 {errors.account && <Text style={styles.errorText}>{errors.account}</Text>}
                             </View>
 
-                            {/* Destination Account — only for transfer */}
-                            {type === 'transfer' && (
+                            {/* Destination Account — for transfer or credit bill */}
+                            {(type === 'transfer' || type === 'credit bill') && (
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.label}>Destination Account</Text>
+                                    <Text style={styles.label}>{type === 'transfer' ? 'Destination Account' : 'Credit Card'}</Text>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                                        {accounts
+                                            .filter(a => type === 'transfer' ? true : a.isCreditCard)
+                                            .map((a: Account) => (
+                                                <TouchableOpacity
+                                                    key={a.id}
+                                                    style={[styles.chip, toAccountId === a.id && styles.chipActive]}
+                                                    onPress={() => {
+                                                        setToAccountId(a.id);
+                                                        if (errors.toAccount) setErrors(prev => ({ ...prev, toAccount: '' }));
+                                                    }}
+                                                >
+                                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                        {toAccountId === a.id && <Check size={14} color={activeColors.tint} />}
+                                                        <Text style={[styles.chipText, toAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
+                                                    </View>
+                                                </TouchableOpacity>
+                                            ))}
+                                    </ScrollView>
+                                    {errors.toAccount && <Text style={styles.errorText}>{errors.toAccount}</Text>}
+                                    {type === 'credit bill' && accounts.filter(a => a.isCreditCard).length === 0 && (
+                                        <Text style={styles.infoText}>No credit cards found. Mark an account as Credit Card first.</Text>
+                                    )}
+                                </View>
+                            )}
+
+                            {/* Settlement / Partial Payment Trigger */}
+                            {transaction && isLendOrBorrow && !transaction.settledStatus && (
+                                <View style={styles.settlementTrigger}>
+                                    {!isSettlementMode && !isPartialPaymentMode && (
+                                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                                            <TouchableOpacity
+                                                style={[styles.settleBtn, { flex: 1 }]}
+                                                onPress={() => {
+                                                    setIsSettlementMode(true);
+                                                    if (accounts.length > 0) setSettlementAccountId(accounts[0].id);
+                                                }}
+                                            >
+                                                <Check color="#fff" size={18} />
+                                                <Text style={styles.settleBtnText}>Full Settle</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.settleBtn, { flex: 1, backgroundColor: activeColors.tint }]}
+                                                onPress={() => {
+                                                    setIsPartialPaymentMode(true);
+                                                    setPaymentAmount('');
+                                                    if (accounts.length > 0) setSettlementAccountId(accounts[0].id);
+                                                }}
+                                            >
+                                                <Plus color="#fff" size={18} />
+                                                <Text style={styles.settleBtnText}>Record Payment</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                </View>
+                            )}
+
+                            {isPartialPaymentMode && (
+                                <View style={styles.settlementContainer}>
+                                    <View style={styles.settlementHeader}>
+                                        <Text style={styles.settlementTitle}>Partial Payment</Text>
+                                        <TouchableOpacity onPress={() => setIsPartialPaymentMode(false)}>
+                                            <Text style={{ color: activeColors.error, fontSize: 12, fontWeight: '700' }}>Cancel</Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <Text style={styles.label}>Payment Amount</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        keyboardType="numeric"
+                                        placeholder="0.00"
+                                        value={paymentAmount}
+                                        onChangeText={setPaymentAmount}
+                                    />
+
+                                    <Text style={[styles.label, { marginTop: 16 }]}>Funding Account</Text>
                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
                                         {accounts.map((a: Account) => (
                                             <TouchableOpacity
                                                 key={a.id}
-                                                style={[styles.chip, toAccountId === a.id && styles.chipActive]}
-                                                onPress={() => {
-                                                    setToAccountId(a.id);
-                                                    if (errors.toAccount) setErrors(prev => ({ ...prev, toAccount: '' }));
-                                                }}
+                                                style={[styles.chip, settlementAccountId === a.id && styles.chipActive]}
+                                                onPress={() => setSettlementAccountId(a.id)}
                                             >
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                                    {toAccountId === a.id && <Check size={14} color={activeColors.tint} />}
-                                                    <Text style={[styles.chipText, toAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
-                                                </View>
+                                                <Text style={[styles.chipText, settlementAccountId === a.id && styles.chipTextActive]}>{a.name}</Text>
                                             </TouchableOpacity>
                                         ))}
                                     </ScrollView>
-                                    {errors.toAccount && <Text style={styles.errorText}>{errors.toAccount}</Text>}
-                                </View>
-                            )}
 
-                            {/* Category — only for expense/income */}
-                            {(type === 'expense' || type === 'income') && (
-                                <View style={styles.inputGroup}>
-                                    <View style={styles.labelRow}>
-                                        <Text style={styles.label}>Category</Text>
-                                        <TouchableOpacity onPress={() => setIsCategoryModalVisible(true)} style={styles.addCategoryBtn}>
-                                            <Plus size={iconScale.sm} color={activeColors.tint} />
-                                            <Text style={styles.addCategoryBtnText}>Add</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                                        {relevantCategories.map((c: Category) => (
-                                            <TouchableOpacity
-                                                key={c.id}
-                                                style={[styles.chip, categoryId === c.id && styles.chipActive, { borderColor: c.colorHex }]}
-                                                onPress={() => {
-                                                    setCategoryId(c.id);
-                                                    if (errors.category) setErrors(prev => ({ ...prev, category: '' }));
-                                                }}
-                                            >
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                                    {categoryId === c.id && <Check size={14} color={activeColors.tint} />}
-                                                    <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
-                                                </View>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
-                                    {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
-                                </View>
-                            )}
-
-                            {/* Settlement Section */}
-                            {!isSettlementMode && transaction && isLendOrBorrow && !transaction.settledStatus && (
-                                <View style={styles.settlementTrigger}>
-                                    <TouchableOpacity
-                                        style={styles.settleBtn}
-                                        onPress={() => {
-                                            setIsSettlementMode(true);
-                                            if (accounts.length > 0) setSettlementAccountId(accounts[0].id);
-                                        }}
-                                    >
-                                        <Check color="#fff" size={18} />
-                                        <Text style={styles.settleBtnText}>Settle this {type}</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-
-                            {transaction && transaction.settledStatus && (
-                                <View style={styles.settlementTrigger}>
-                                    <TouchableOpacity
-                                        style={[styles.settleBtn, { backgroundColor: activeColors.error }]}
-                                        onPress={handleCancelSettlement}
-                                    >
-                                        <X color="#fff" size={18} />
-                                        <Text style={styles.settleBtnText}>Cancel Settlement</Text>
+                                    <TouchableOpacity style={styles.confirmSettleBtn} onPress={handleRecordPayment}>
+                                        <Text style={styles.confirmSettleText}>Confirm Payment</Text>
                                     </TouchableOpacity>
                                 </View>
                             )}
@@ -679,6 +718,7 @@ const getStyles = (colors: any, insets: any, fontScale: any) => StyleSheet.creat
     row: { flexDirection: 'row', gap: 16 },
     label: { fontSize: fontScale.label, fontWeight: '900', textTransform: 'uppercase', color: colors.secondaryText, marginBottom: 8, marginLeft: 4, letterSpacing: 1 },
     errorText: { fontSize: 12, fontWeight: '700', color: colors.error, marginTop: 4, marginLeft: 4 },
+    infoText: { fontSize: 11, fontWeight: '600', color: colors.secondaryText, marginTop: 4, marginLeft: 4, fontStyle: 'italic' },
     input: { backgroundColor: colors.card, padding: 14, borderRadius: 16, fontSize: fontScale.body + 1, fontWeight: '700', color: colors.text, borderWidth: 1, borderColor: colors.border },
     inputLarge: { backgroundColor: colors.card, padding: 20, borderRadius: 20, fontSize: fontScale.input, fontWeight: '900', color: colors.tint, borderWidth: 1, borderColor: colors.border, textAlign: 'center' },
     contactBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.tint + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: colors.tint + '25' },

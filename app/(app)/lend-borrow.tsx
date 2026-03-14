@@ -17,16 +17,24 @@ export default function LendBorrowScreen() {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
     const [activeTab, setActiveTab] = useState<'all' | 'net'>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'settled'>('pending');
+    const [personFilter, setPersonFilter] = useState<string | null>(null);
 
     const { data: transactions = [], isLoading, refetch, isRefetching } = useTransactions();
     const { data: settings } = useSettings();
 
     const symbol = getCurrencySymbol(settings?.baseCurrency);
 
-    const debts = useMemo(() =>
-        transactions.filter(t => t.type === 'lend' || t.type === 'borrow'),
-        [transactions]
-    );
+    const debts = useMemo(() => {
+        let base = transactions.filter(t => t.type === 'lend' || t.type === 'borrow');
+        if (statusFilter === 'pending') base = base.filter(t => !t.settledStatus);
+        if (statusFilter === 'settled') base = base.filter(t => t.settledStatus);
+
+        if (personFilter) {
+            base = base.filter(t => t.personName === personFilter);
+        }
+        return base;
+    }, [transactions, statusFilter, personFilter]);
 
     const totalBorrowed = useMemo(() =>
         debts.filter(t => t.type === 'borrow' && !t.settledStatus).reduce((sum, t) => sum + t.amount, 0),
@@ -127,6 +135,38 @@ export default function LendBorrowScreen() {
                     </TouchableOpacity>
                 </View>
 
+                {/* Filter Bar */}
+                {activeTab === 'all' && (
+                    <View style={styles.filterBar}>
+                        {(['pending', 'settled', 'all'] as const).map((status) => (
+                            <TouchableOpacity
+                                key={status}
+                                style={[
+                                    styles.filterBtnSmall,
+                                    statusFilter === status && { backgroundColor: activeColors.tint + '20', borderColor: activeColors.tint }
+                                ]}
+                                onPress={() => setStatusFilter(status)}
+                            >
+                                <Text style={[
+                                    styles.filterBtnText,
+                                    statusFilter === status ? { color: activeColors.tint, fontWeight: '900' } : { color: activeColors.secondaryText }
+                                ]}>
+                                    {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                )}
+
+                {personFilter && activeTab === 'all' && (
+                    <View style={styles.personFilterBar}>
+                        <Text style={styles.personFilterText}>Showing records for <Text style={{ fontWeight: '900' }}>{personFilter}</Text></Text>
+                        <TouchableOpacity onPress={() => setPersonFilter(null)}>
+                            <Text style={styles.clearFilterText}>Clear</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 {/* Content */}
                 <View style={styles.listSection}>
                     {activeTab === 'all' ? (
@@ -203,7 +243,15 @@ export default function LendBorrowScreen() {
                                 const isOwedToMe = item.amount > 0;
                                 const color = isOwedToMe ? activeColors.success : activeColors.notification;
                                 return (
-                                    <View key={item.name} style={styles.card}>
+                                    <TouchableOpacity
+                                        key={item.name}
+                                        style={styles.card}
+                                        onPress={() => {
+                                            setPersonFilter(item.name);
+                                            setStatusFilter('pending');
+                                            setActiveTab('all');
+                                        }}
+                                    >
                                         <View style={styles.cardHeader}>
                                             <View style={styles.cardLeft}>
                                                 <View style={[styles.iconContainer, { backgroundColor: color + '15' }]}>
@@ -221,7 +269,7 @@ export default function LendBorrowScreen() {
                                                 </Text>
                                             </View>
                                         </View>
-                                    </View>
+                                    </TouchableOpacity>
                                 );
                             })}
                             {netList.length === 0 && (
@@ -286,6 +334,19 @@ const getStyles = (colors: any) => StyleSheet.create({
     },
     tabText: { fontSize: FONT.sm, fontWeight: '800', color: colors.text, textTransform: 'uppercase', letterSpacing: 0.5 },
     tabTextActive: { color: '#fff' },
+    filterBar: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 12, gap: 8 },
+    filterBtnSmall: {
+        paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.sm,
+        backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    },
+    filterBtnText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+    personFilterBar: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingHorizontal: 16, paddingVertical: 8, marginHorizontal: 20, marginBottom: 12,
+        backgroundColor: colors.tint + '10', borderRadius: RADIUS.md, borderWidth: 1, borderColor: colors.tint + '30',
+    },
+    personFilterText: { fontSize: 11, color: colors.text, fontWeight: '600' },
+    clearFilterText: { fontSize: 11, color: colors.tint, fontWeight: '800' },
     listSection: { paddingHorizontal: 20 },
     card: {
         backgroundColor: colors.card, padding: 16, borderRadius: RADIUS.xl,

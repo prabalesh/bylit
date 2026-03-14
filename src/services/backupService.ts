@@ -21,7 +21,7 @@ export class BackupService {
                 // To be safe and flat:
                 splitParticipants: await db.getAllAsync('SELECT * FROM split_participants'),
                 exportDate: new Date().toISOString(),
-                version: '1.3.0'
+                version: '1.4.0'
             };
 
             const jsonContent = JSON.stringify(data, null, 2);
@@ -68,7 +68,19 @@ export class BackupService {
 
             // 3. Import Accounts
             for (const acc of data.accounts) {
-                await Repository.saveAccount(acc);
+                await db.runAsync(
+                    `INSERT OR REPLACE INTO accounts (id, name, type, bank_type, is_credit_card, balance, sync_status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        acc.id,
+                        acc.name,
+                        acc.type,
+                        acc.bankType || null,
+                        acc.isCreditCard ? 1 : 0,
+                        acc.balance,
+                        'synced'
+                    ]
+                );
             }
 
             // 4. Import Transactions 
@@ -80,14 +92,15 @@ export class BackupService {
             for (const tx of data.transactions) {
                 await db.runAsync(
                     `INSERT OR REPLACE INTO transactions 
-                    (id, account_id, to_account_id, category_id, amount, currency, type, description, date, person_name, due_date, settled_status, sync_status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    (id, account_id, to_account_id, category_id, amount, remaining_amount, currency, type, description, date, person_name, due_date, settled_status, related_id, sync_status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         tx.id,
                         tx.accountId,
                         tx.toAccountId || null,
                         tx.categoryId || null,
                         tx.amount,
+                        tx.remainingAmount !== undefined ? tx.remainingAmount : (tx.type === 'lend' || tx.type === 'borrow' ? tx.amount : null),
                         tx.currency || 'INR',
                         tx.type,
                         tx.description || '',
@@ -95,6 +108,7 @@ export class BackupService {
                         tx.personName || null,
                         tx.dueDate || null,
                         tx.settledStatus ? 1 : 0,
+                        tx.relatedId || null,
                         'synced'
                     ]
                 );

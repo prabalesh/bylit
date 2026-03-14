@@ -10,7 +10,7 @@ import { Repository } from '../../src/services/repository';
 import { Settings as SettingsType } from '../../src/types/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
-import { scheduleDailyExpenseReminder, cancelDailyReminder, requestNotificationPermissions } from '../../src/services/notifications';
+import { scheduleDailyExpenseReminder, cancelDailyReminder, cancelAllDailyReminders, requestNotificationPermissions } from '../../src/services/notifications';
 import { CSVService } from '../../src/services/csvService';
 import { useTransactions } from '../../src/hooks/useData';
 import { BackupService } from '../../src/services/backupService';
@@ -51,15 +51,14 @@ export default function SettingsScreen() {
 
 
     const [reminderEnabled, setReminderEnabled] = useState(false);
-    const [reminderHour, setReminderHour] = useState(20);
-    const [reminderMinute, setReminderMinute] = useState(0);
-
+    const [reminderTimes, setReminderTimes] = useState<{ hour: number, minute: number }[]>([]);
+    const [tempHour, setTempHour] = useState(20);
+    const [tempMinute, setTempMinute] = useState(0);
 
     useEffect(() => {
         if (settings) {
             setReminderEnabled(settings.reminderEnabled ?? false);
-            setReminderHour(settings.reminderHour ?? 20);
-            setReminderMinute(settings.reminderMinute ?? 0);
+            setReminderTimes(settings.reminderTimes ?? []);
         }
     }, [settings]);
 
@@ -67,14 +66,14 @@ export default function SettingsScreen() {
     const handleToggleReminder = async (value: boolean) => {
         if (!value) {
             setReminderEnabled(false);
-            await cancelDailyReminder();
+            await cancelAllDailyReminders();
             updateSettingsMutation.mutate({ reminderEnabled: false });
             return;
         }
 
         const confirmed = await showConfirm({
             title: 'Enable Notifications',
-            message: 'Bylit needs notification permissions to remind you to log your daily expenses. Would you like to enable this?',
+            message: 'Bylit needs notification permissions for daily reminders. Enable now?',
             confirmText: 'Enable',
             cancelText: 'Not Now'
         });
@@ -89,37 +88,56 @@ export default function SettingsScreen() {
             setReminderEnabled(false);
             showConfirm({
                 title: 'Permission Denied',
-                message: 'Please enable notifications for Bylit in your device settings to use daily reminders.',
+                message: 'Please enable notifications in device settings.',
                 confirmText: 'OK',
                 type: 'info'
             });
             return;
         }
         setReminderEnabled(true);
-        await scheduleDailyExpenseReminder(reminderHour, reminderMinute);
         updateSettingsMutation.mutate({ reminderEnabled: true });
+
+        // Re-schedule all existing times
+        for (const time of reminderTimes) {
+            await scheduleDailyExpenseReminder(time.hour, time.minute);
+        }
+    };
+
+    const addReminderTime = async () => {
+        if (reminderTimes.some(t => t.hour === tempHour && t.minute === tempMinute)) {
+            showToast('Reminder already exists for this time', 'info');
+            return;
+        }
+
+        const newTimes = [...reminderTimes, { hour: tempHour, minute: tempMinute }].sort((a, b) => (a.hour * 60 + a.minute) - (b.hour * 60 + b.minute));
+        setReminderTimes(newTimes);
+        updateSettingsMutation.mutate({ reminderTimes: newTimes });
+
+        if (reminderEnabled) {
+            await scheduleDailyExpenseReminder(tempHour, tempMinute);
+        }
+        showToast('Reminder added', 'success');
+    };
+
+    const removeReminderTime = async (hour: number, minute: number) => {
+        const newTimes = reminderTimes.filter(t => !(t.hour === hour && t.minute === minute));
+        setReminderTimes(newTimes);
+        updateSettingsMutation.mutate({ reminderTimes: newTimes });
+
+        await cancelDailyReminder(hour, minute);
+        showToast('Reminder removed', 'success');
     };
 
 
     const adjustHour = (delta: number) => {
-        const newHour = (reminderHour + delta + 24) % 24;
-        setReminderHour(newHour);
+        setTempHour((tempHour + delta + 24) % 24);
     };
-
 
     const adjustMinute = (delta: number) => {
-        const newMin = (reminderMinute + delta + 60) % 60;
-        setReminderMinute(newMin);
+        setTempMinute((tempMinute + delta + 60) % 60);
     };
 
 
-    const saveReminderTime = async () => {
-        updateSettingsMutation.mutate({ reminderHour, reminderMinute });
-        if (reminderEnabled) {
-            await scheduleDailyExpenseReminder(reminderHour, reminderMinute);
-        }
-        showToast('Reminder time saved', 'success');
-    };
 
 
     const formatTime = (h: number, m: number) =>
@@ -280,7 +298,7 @@ export default function SettingsScreen() {
                             </View>
                             <View>
                                 <Text style={styles.menuLabel}>Daily Expense Reminder</Text>
-                                <Text style={styles.menuSubLabel}>Remind me to add expenses every day</Text>
+                                <Text style={styles.menuSubLabel}>Get notified to log your daily spending</Text>
                             </View>
                         </View>
                         <Switch
@@ -291,19 +309,33 @@ export default function SettingsScreen() {
                         />
                     </View>
 
+                    {/* Multiple Reminders List */}
+                    {reminderTimes.map((time, index) => (
+                        <View key={`${time.hour}-${time.minute}`} style={[styles.menuItem, { borderBottomWidth: 1, borderBottomColor: activeColors.border + '30', backgroundColor: activeColors.background + '50' }]}>
+                            <View style={styles.menuItemLeft}>
+                                <Clock color={activeColors.tint} size={16} />
+                                <Text style={[styles.menuLabel, { fontSize: 13 }]}>{formatTime(time.hour, time.minute)}</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => removeReminderTime(time.hour, time.minute)}>
+                                <Text style={{ color: activeColors.error, fontSize: 12, fontWeight: '700' }}>Remove</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+
+                    {/* Add New Reminder */}
                     <View style={[styles.menuItem, { opacity: reminderEnabled ? 1 : 0.45 }]}>
                         <View style={styles.menuItemLeft}>
                             <View style={styles.menuIconBox}>
                                 <Clock color={activeColors.tint} size={18} />
                             </View>
-                            <Text style={styles.menuLabel}>Reminder Time</Text>
+                            <Text style={styles.menuLabel}>New Reminder</Text>
                         </View>
                         <View style={styles.timePicker}>
                             <View style={styles.timeUnit}>
                                 <TouchableOpacity style={styles.timeBtn} onPress={() => adjustHour(1)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▲</Text>
                                 </TouchableOpacity>
-                                <Text style={styles.timeValue}>{reminderHour.toString().padStart(2, '0')}</Text>
+                                <Text style={styles.timeValue}>{tempHour.toString().padStart(2, '0')}</Text>
                                 <TouchableOpacity style={styles.timeBtn} onPress={() => adjustHour(-1)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▼</Text>
                                 </TouchableOpacity>
@@ -315,7 +347,7 @@ export default function SettingsScreen() {
                                 <TouchableOpacity style={styles.timeBtn} onPress={() => adjustMinute(5)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▲</Text>
                                 </TouchableOpacity>
-                                <Text style={styles.timeValue}>{reminderMinute.toString().padStart(2, '0')}</Text>
+                                <Text style={styles.timeValue}>{tempMinute.toString().padStart(2, '0')}</Text>
                                 <TouchableOpacity style={styles.timeBtn} onPress={() => adjustMinute(-5)} disabled={!reminderEnabled}>
                                     <Text style={[styles.timeBtnText, { color: activeColors.tint }]}>▼</Text>
                                 </TouchableOpacity>
@@ -323,21 +355,13 @@ export default function SettingsScreen() {
 
                             <TouchableOpacity
                                 style={[styles.saveTimeBtn, { backgroundColor: activeColors.tint, opacity: reminderEnabled ? 1 : 0.45 }]}
-                                onPress={saveReminderTime}
+                                onPress={addReminderTime}
                                 disabled={!reminderEnabled}
                             >
                                 <Check size={14} color="#fff" />
                             </TouchableOpacity>
                         </View>
                     </View>
-
-                    {reminderEnabled && (
-                        <View style={styles.reminderInfo}>
-                            <Text style={styles.reminderInfoText}>
-                                You'll be reminded daily at {formatTime(reminderHour, reminderMinute)}
-                            </Text>
-                        </View>
-                    )}
                 </View>
             </View>
 

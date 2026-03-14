@@ -22,6 +22,8 @@ import {
     useTransactions, useAccounts, useSettings,
     useDueSubscriptions, useProcessSubscriptionPayment
 } from '../../src/hooks/useData';
+import { useToast } from '../../src/providers/ToastProvider';
+import { useConfirm } from '../../src/providers/ConfirmProvider';
 import * as Linking from 'expo-linking';
 
 
@@ -33,6 +35,8 @@ export default function TransactionsScreen() {
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
     const [initialTransactionType, setInitialTransactionType] = useState<string | undefined>(undefined);
     const router = useRouter();
+    const { showToast } = useToast();
+    const { showConfirm } = useConfirm();
 
     const [viewMode, setViewMode] = useState<'month' | 'year'>('month');
     const now = new Date();
@@ -192,6 +196,20 @@ export default function TransactionsScreen() {
                             <Text style={styles.summaryLabel}>Expense</Text>
                             <Text style={[styles.summaryValue, { color: activeColors.error }]}>
                                 {symbol}{currentPeriodTotals.expense.toLocaleString('en-IN')}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={[styles.summaryCard, { backgroundColor: activeColors.tint + '10' }]}>
+                        <LinearGradient
+                            colors={[activeColors.tint + '20', activeColors.tint + '05']}
+                            style={styles.summaryIconWrapper}
+                        >
+                            <Check color={activeColors.tint} size={16} strokeWidth={2.5} />
+                        </LinearGradient>
+                        <View>
+                            <Text style={styles.summaryLabel}>Remaining</Text>
+                            <Text style={[styles.summaryValue, { color: activeColors.tint }]}>
+                                {symbol}{(currentPeriodTotals.income - currentPeriodTotals.expense).toLocaleString('en-IN')}
                             </Text>
                         </View>
                     </View>

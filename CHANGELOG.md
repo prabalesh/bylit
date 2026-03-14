@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-03-14
+### Added
+- Home Summary: Added remaining balance (Income - Expense) display.
+- Advanced Notifications: Support for multiple daily reminders and notification channels.
+- Enhanced Lend/Borrow: Added filters (All, Pending, Settled), partial payment support, and deep-dive view from net balance.
+- Detailed Accounts: Support for Bank Account types (Savings, Current, etc.) and Credit Card identification.
+- Future-Proofing: Transactions are now restricted to present and past only.
+- Scalability: Optimized data handling for large transaction histories.
+
+### Changed
+- UI Overhaul: Complete redesign of the Settings page for a more premium experience.
+- Feedback: Replaced system alerts with modern toast and confirmation components.
+
 ## [1.3.0] - 2026-03-11
 ### Added
 - Advanced Split Bills: Split by Equally, Parts, or Percentage.

@@ -7,6 +7,8 @@ export interface Account {
     id: string;
     name: string;
     type: 'Bank' | 'Cash' | 'Credit';
+    bankType?: 'Savings' | 'Current' | 'Salary' | 'Fixed Deposit' | 'Other';
+    isCreditCard?: boolean;
     balance: number;
     createdAt: string;
     updatedAt: string;
@@ -28,8 +30,9 @@ export interface Transaction {
     toAccountId?: string;
     categoryId?: string;
     amount: number;
+    remainingAmount?: number; // For partial lend/borrow settlement
     currency: string;
-    type: 'expense' | 'income' | 'lend' | 'borrow' | 'transfer';
+    type: 'expense' | 'income' | 'lend' | 'borrow' | 'transfer' | 'credit bill';
     description: string;
     date: string;
     tags?: string[];
@@ -62,6 +65,7 @@ export interface Settings {
     reminderEnabled: boolean;
     reminderHour: number;
     reminderMinute: number;
+    reminderTimes?: { hour: number; minute: number }[]; // Support for multiple daily reminders
     createdAt: string;
     updatedAt: string;
 }

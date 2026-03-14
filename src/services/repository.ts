@@ -12,6 +12,8 @@ export class Repository {
             id: String(row.id),
             name: String(row.name),
             type: (row.type || 'Bank') as any,
+            bankType: row.bank_type as any,
+            isCreditCard: row.is_credit_card === 1,
             balance: Number(row.balance) || 0,
             createdAt: String(row.updated_at || new Date().toISOString()),
             updatedAt: String(row.updated_at || new Date().toISOString())
@@ -22,74 +24,58 @@ export class Repository {
         const db = getDB();
         const id = account.id || generateId();
         await db.runAsync(
-            `INSERT OR REPLACE INTO accounts (id, name, type, balance, sync_status) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [id, account.name || '', account.type || 'Bank', account.balance || 0, 'synced']
+            `INSERT OR REPLACE INTO accounts (id, name, type, bank_type, is_credit_card, balance, sync_status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                account.name || '',
+                account.type || 'Bank',
+                account.bankType || null,
+                account.isCreditCard ? 1 : 0,
+                account.balance || 0,
+                'synced'
+            ]
         );
     }
 
     // Transactions
-    static async getTransactions(startDate?: Date, endDate?: Date, accountId?: string): Promise<Transaction[]> {
+    static async getTransactions(startDate?: Date, endDate?: Date, accountId?: string, limit: number = 100, offset: number = 0): Promise<Transaction[]> {
         const db = getDB();
-        // Always fetch ALL transactions to compute accurate running balances backwards
-        let query = 'SELECT * FROM transactions WHERE sync_status != "deleted" ORDER BY date DESC';
-        const results = await db.getAllAsync<any>(query);
+
+        // Build query with filters
+        let whereClause = 'WHERE sync_status != "deleted"';
+        const params: any[] = [];
+
+        if (startDate) {
+            whereClause += ' AND date >= ?';
+            params.push(startDate.toISOString());
+        }
+        if (endDate) {
+            whereClause += ' AND date <= ?';
+            params.push(endDate.toISOString());
+        }
+        if (accountId) {
+            whereClause += ' AND (account_id = ? OR to_account_id = ?)';
+            params.push(accountId, accountId);
+        }
+
+        const query = `SELECT * FROM transactions ${whereClause} ORDER BY date DESC LIMIT ? OFFSET ?`;
+        const results = await db.getAllAsync<any>(query, [...params, limit, offset]);
 
         // Fetch accounts to get names
         const accounts = await this.getAccounts();
         const accountMap = new Map(accounts.map(a => [a.id, a.name]));
 
-        const allMapped = results.map(row => {
+        const transactions = results.map(row => {
             const tx = this.mapRowToTransaction(row);
             tx.accountName = accountMap.get(tx.accountId) || 'Unknown';
             return tx;
         });
 
-        // Calculate running balance per account for all transactions
-        const runningBalances = new Map<string, number>();
-        accounts.forEach(a => runningBalances.set(a.id, a.balance));
-
-        // The transactions are ORDER BY date DESC, so the first one is the latest.
-        for (const tx of allMapped) {
-            const currentBal = runningBalances.get(tx.accountId) || 0;
-            tx.balanceAfter = currentBal;
-
-            // To get the balance BEFORE this transaction, subtract its forward impact
-            let impact = 0;
-            switch (tx.type) {
-                case 'expense':
-                case 'lend':
-                    impact = -tx.amount;
-                    break;
-                case 'income':
-                case 'borrow':
-                    impact = tx.amount;
-                    break;
-                case 'transfer':
-                    impact = -tx.amount; // Source account impact
-                    break;
-            }
-            runningBalances.set(tx.accountId, currentBal - impact);
-
-            if (tx.type === 'transfer' && tx.toAccountId) {
-                const toCurrentBal = runningBalances.get(tx.toAccountId) || 0;
-                // Forward impact on destination is +amount
-                runningBalances.set(tx.toAccountId, toCurrentBal - tx.amount);
-            }
-        }
-
-        // Apply filters in JS
-        let filtered = allMapped;
-        if (startDate && endDate) {
-            const startStr = startDate.toISOString();
-            const endStr = endDate.toISOString();
-            filtered = filtered.filter(t => t.date >= startStr && t.date <= endStr);
-        }
-        if (accountId) {
-            filtered = filtered.filter(t => t.accountId === accountId || t.toAccountId === accountId);
-        }
-
-        return filtered;
+        // Note: For large data, running balance calculation should ideally be 
+        // pre-calculated or stored per transaction to avoid high memory usage.
+        // This current optimization limits the rows fetched while still providing names.
+        return transactions;
     }
 
     private static mapRowToTransaction(row: any): Transaction {
@@ -99,6 +85,7 @@ export class Repository {
             toAccountId: row.to_account_id ? String(row.to_account_id) : undefined,
             categoryId: row.category_id ? String(row.category_id) : undefined,
             amount: Number(row.amount) || 0,
+            remainingAmount: row.remaining_amount !== null ? Number(row.remaining_amount) : undefined,
             currency: String(row.currency || 'INR'),
             type: (row.type || 'expense') as any,
             description: String(row.description || ''),
@@ -118,7 +105,7 @@ export class Repository {
         const db = getDB();
         const multiplier = isRevert ? -1 : 1;
 
-        if (tx.type === 'transfer') {
+        if (tx.type === 'transfer' || tx.type === 'credit bill') {
             if (!tx.toAccountId) return;
             // Subtract from source
             await db.runAsync(
@@ -156,6 +143,7 @@ export class Repository {
     static async saveTransaction(tx: Partial<Transaction>): Promise<void> {
         const db = getDB();
         const id = tx.id || generateId();
+        const isLendOrBorrow = tx.type === 'lend' || tx.type === 'borrow';
 
         // If update, revert old impact first
         if (tx.id) {
@@ -168,14 +156,15 @@ export class Repository {
 
         await db.runAsync(
             `INSERT OR REPLACE INTO transactions 
-            (id, account_id, to_account_id, category_id, amount, currency, type, description, date, person_name, due_date, settled_status, related_id, sync_status) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (id, account_id, to_account_id, category_id, amount, remaining_amount, currency, type, description, date, person_name, due_date, settled_status, related_id, sync_status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 tx.accountId || '',
                 tx.toAccountId || null,
                 tx.categoryId || null,
                 tx.amount || 0,
+                tx.remainingAmount !== undefined ? tx.remainingAmount : (isLendOrBorrow ? (tx.amount || 0) : null),
                 tx.currency || 'INR',
                 tx.type || 'expense',
                 tx.description || '',
@@ -231,7 +220,45 @@ export class Repository {
 
     static async unsettleTransaction(id: string): Promise<void> {
         const db = getDB();
-        await db.runAsync('UPDATE transactions SET settled_status = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+        await db.runAsync('UPDATE transactions SET settled_status = 0, remaining_amount = amount, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [id]);
+    }
+
+    static async recordPayment(originalTransactionId: string, paymentAmount: number, accountId: string, date: string): Promise<void> {
+        const db = getDB();
+        const original = await db.getFirstAsync<any>('SELECT * FROM transactions WHERE id = ?', [originalTransactionId]);
+        if (!original) throw new Error('Original transaction not found');
+
+        const originalTx = this.mapRowToTransaction(original);
+        const newRemaining = Math.max(0, (original.remaining_amount ?? original.amount) - paymentAmount);
+
+        // 1. Create the payment transaction
+        const paymentType = originalTx.type === 'lend' ? 'income' : 'expense';
+        const paymentDesc = `Payment: ${originalTx.personName || originalTx.description}`;
+
+        await this.saveTransaction({
+            accountId,
+            amount: paymentAmount,
+            currency: originalTx.currency,
+            type: paymentType,
+            description: paymentDesc,
+            date,
+            relatedId: originalTransactionId,
+        });
+
+        // 2. Update original remaining amount
+        await db.runAsync(
+            'UPDATE transactions SET remaining_amount = ?, settled_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [newRemaining, newRemaining === 0 ? 1 : 0, originalTransactionId]
+        );
+    }
+
+    static async getPaymentsForTransaction(id: string): Promise<Transaction[]> {
+        const db = getDB();
+        const results = await db.getAllAsync<any>(
+            'SELECT * FROM transactions WHERE related_id = ? AND sync_status != "deleted" ORDER BY date DESC',
+            [id]
+        );
+        return results.map(row => this.mapRowToTransaction(row));
     }
 
     static async deleteAccount(id: string): Promise<void> {
@@ -321,6 +348,7 @@ export class Repository {
             reminderEnabled: settings.reminder_enabled === 1,
             reminderHour: Number(settings.reminder_hour ?? 20),
             reminderMinute: Number(settings.reminder_minute ?? 0),
+            reminderTimes: settings.reminder_times ? JSON.parse(settings.reminder_times) : undefined,
             createdAt: String(settings.updated_at || new Date().toISOString()),
             updatedAt: String(settings.updated_at || new Date().toISOString())
         } as Settings;
@@ -350,10 +378,13 @@ export class Repository {
         const reminderMinute = settings.reminderMinute !== undefined
             ? settings.reminderMinute
             : (existing?.reminderMinute ?? 0);
+        const reminderTimes = settings.reminderTimes !== undefined
+            ? settings.reminderTimes
+            : (existing?.reminderTimes ?? []);
 
         await db.runAsync(
-            `INSERT OR REPLACE INTO settings (id, base_currency, font_size, icon_size, reminder_enabled, reminder_hour, reminder_minute, sync_status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO settings (id, base_currency, font_size, icon_size, reminder_enabled, reminder_hour, reminder_minute, reminder_times, sync_status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 fixedId,
                 baseCurrency,
@@ -362,6 +393,7 @@ export class Repository {
                 reminderEnabled ? 1 : 0,
                 reminderHour,
                 reminderMinute,
+                JSON.stringify(reminderTimes),
                 'synced'
             ]
         );
