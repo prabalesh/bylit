@@ -27,10 +27,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/icon.png",
-        "backgroundImage": "./assets/icon.png",
-        "monochromeImage": "./assets/icon.png"
+        "backgroundColor": "#7A2BFF"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.prabalesh.bylit",
@@ -54,12 +51,24 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "enableMinifyInReleaseBuilds": true,
+            "useLegacyPackaging": true
+          }
+        }
+      ],
       "expo-router",
       "expo-sqlite",
       "expo-sharing",
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-build-properties"
     ]
   }
 }
