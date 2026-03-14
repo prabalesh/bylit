@@ -186,3 +186,62 @@ export const scheduleLendBorrowReminder = async (txId: string, type: 'lend' | 'b
         },
     });
 };
+
+/**
+ * Synchronize daily reminders with the provided settings.
+ * This prevents redundant scheduling and ensures only necessary changes are made to the OS.
+ */
+export async function syncDailyReminders(enabled: boolean, times: { hour: number; minute: number }[]): Promise<void> {
+    if (!Notifications) return;
+
+    if (!enabled) {
+        await cancelAllDailyReminders();
+        return;
+    }
+
+    const granted = await requestNotificationPermissions();
+    if (!granted) return;
+
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const scheduledIdentifiers = new Set(
+        scheduled
+            .filter((n: any) => n.identifier.startsWith(DAILY_REMINDER_ID_PREFIX))
+            .map((n: any) => n.identifier)
+    );
+
+    const desiredIdentifiers = new Set(
+        times.map(t => `${DAILY_REMINDER_ID_PREFIX}${t.hour}_${t.minute}`)
+    );
+
+    // Cancel what's no longer desired
+    for (const id of Array.from(scheduledIdentifiers)) {
+        if (!desiredIdentifiers.has(id as string)) {
+            await Notifications.cancelScheduledNotificationAsync(id as string);
+        }
+    }
+
+    const desiredTimes = times.map(t => ({ id: `${DAILY_REMINDER_ID_PREFIX}${t.hour}_${t.minute}`, ...t }));
+
+    // Schedule what's missing
+    for (const t of desiredTimes) {
+        if (!scheduledIdentifiers.has(t.id)) {
+            await Notifications.scheduleNotificationAsync({
+                identifier: t.id,
+                content: {
+                    title: '💰 Time to log your expenses!',
+                    body: "Don't forget to add today's transactions in Bylit.",
+                    sound: true,
+                    data: { type: 'daily_reminder' },
+                    autoDismiss: true,
+                },
+                trigger: {
+                    hour: t.hour,
+                    minute: t.minute,
+                    repeats: true,
+                    channelId: CHANNEL_REMINDERS,
+                },
+            });
+            console.log(`✅ Daily reminder scheduled for ${t.hour}:${t.minute}`);
+        }
+    }
+}

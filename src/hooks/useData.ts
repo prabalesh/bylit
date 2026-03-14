@@ -34,6 +34,27 @@ export const useTransactions = (startDate?: Date, endDate?: Date, accountId?: st
     });
 };
 
+export const usePeriodTotals = (startDate: Date, endDate: Date) => {
+    return useQuery({
+        queryKey: ['periodTotals', startDate.toISOString(), endDate.toISOString()],
+        queryFn: () => Repository.getPeriodTotals(startDate, endDate),
+    });
+};
+
+export const useDebtTotals = () => {
+    return useQuery({
+        queryKey: ['debtTotals'],
+        queryFn: () => Repository.getDebtTotals(),
+    });
+};
+
+export const useNetBalances = () => {
+    return useQuery({
+        queryKey: ['netBalances'],
+        queryFn: () => Repository.getNetBalances(),
+    });
+};
+
 export const useSaveTransaction = () => {
     const queryClient = useQueryClient();
     return useMutation({
@@ -41,6 +62,9 @@ export const useSaveTransaction = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['accounts'] });
+            queryClient.invalidateQueries({ queryKey: ['periodTotals'] });
+            queryClient.invalidateQueries({ queryKey: ['debtTotals'] });
+            queryClient.invalidateQueries({ queryKey: ['netBalances'] });
         },
     });
 };
@@ -52,6 +76,9 @@ export const useDeleteTransaction = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['transactions'] });
             queryClient.invalidateQueries({ queryKey: ['accounts'] });
+            queryClient.invalidateQueries({ queryKey: ['periodTotals'] });
+            queryClient.invalidateQueries({ queryKey: ['debtTotals'] });
+            queryClient.invalidateQueries({ queryKey: ['netBalances'] });
         },
     });
 };

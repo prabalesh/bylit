@@ -662,6 +662,61 @@ export class Repository {
     }
 
 
+    static async getPeriodTotals(startDate: Date, endDate: Date): Promise<{ income: number; expense: number }> {
+        const db = getDB();
+        const start = startDate.toISOString();
+        const end = endDate.toISOString();
+
+        const result = await db.getFirstAsync<any>(
+            `SELECT 
+                SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as income,
+                SUM(CASE WHEN type IN ('expense', 'lend') THEN amount ELSE 0 END) as expense
+             FROM transactions 
+             WHERE sync_status != 'deleted' AND date >= ? AND date <= ?`,
+            [start, end]
+        );
+
+        return {
+            income: Number(result?.income) || 0,
+            expense: Number(result?.expense) || 0
+        };
+    }
+
+    static async getDebtTotals(): Promise<{ lent: number; borrowed: number }> {
+        const db = getDB();
+        const result = await db.getFirstAsync<any>(
+            `SELECT 
+                SUM(CASE WHEN type = 'lend' THEN COALESCE(remaining_amount, amount) ELSE 0 END) as lent,
+                SUM(CASE WHEN type = 'borrow' THEN COALESCE(remaining_amount, amount) ELSE 0 END) as borrowed
+             FROM transactions 
+             WHERE sync_status != 'deleted' AND settled_status = 0 AND type IN ('lend', 'borrow')`
+        );
+
+        return {
+            lent: Number(result?.lent) || 0,
+            borrowed: Number(result?.borrowed) || 0
+        };
+    }
+
+    static async getNetBalances(): Promise<{ name: string; amount: number }[]> {
+        const db = getDB();
+        const results = await db.getAllAsync<any>(
+            `SELECT 
+                person_name as name,
+                SUM(CASE WHEN type = 'lend' THEN COALESCE(remaining_amount, amount) ELSE -COALESCE(remaining_amount, amount) END) as amount
+             FROM transactions 
+             WHERE sync_status != 'deleted' AND settled_status = 0 AND type IN ('lend', 'borrow')
+             GROUP BY person_name
+             HAVING amount != 0
+             ORDER BY ABS(amount) DESC`
+        );
+
+        return results.map(row => ({
+            name: String(row.name || 'Unknown'),
+            amount: Number(row.amount) || 0
+        }));
+    }
+
     static calculateNextDueDate(currentDueDate: string, frequency: Frequency): string {
         const date = new Date(currentDueDate);
         switch (frequency) {

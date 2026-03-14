@@ -10,7 +10,7 @@ import { Repository } from '../../src/services/repository';
 import { Settings as SettingsType } from '../../src/types/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useState, useEffect } from 'react';
-import { scheduleDailyExpenseReminder, cancelDailyReminder, cancelAllDailyReminders, requestNotificationPermissions } from '../../src/services/notifications';
+import { scheduleDailyExpenseReminder, cancelDailyReminder, cancelAllDailyReminders, requestNotificationPermissions, syncDailyReminders } from '../../src/services/notifications';
 import { CSVService } from '../../src/services/csvService';
 import { useTransactions } from '../../src/hooks/useData';
 import { BackupService } from '../../src/services/backupService';
@@ -66,7 +66,7 @@ export default function SettingsScreen() {
     const handleToggleReminder = async (value: boolean) => {
         if (!value) {
             setReminderEnabled(false);
-            await cancelAllDailyReminders();
+            await syncDailyReminders(false, []);
             updateSettingsMutation.mutate({ reminderEnabled: false });
             return;
         }
@@ -96,11 +96,7 @@ export default function SettingsScreen() {
         }
         setReminderEnabled(true);
         updateSettingsMutation.mutate({ reminderEnabled: true });
-
-        // Re-schedule all existing times
-        for (const time of reminderTimes) {
-            await scheduleDailyExpenseReminder(time.hour, time.minute);
-        }
+        await syncDailyReminders(true, reminderTimes);
     };
 
     const addReminderTime = async () => {
@@ -114,7 +110,7 @@ export default function SettingsScreen() {
         updateSettingsMutation.mutate({ reminderTimes: newTimes });
 
         if (reminderEnabled) {
-            await scheduleDailyExpenseReminder(tempHour, tempMinute);
+            await syncDailyReminders(true, newTimes);
         }
         showToast('Reminder added', 'success');
     };
@@ -124,7 +120,11 @@ export default function SettingsScreen() {
         setReminderTimes(newTimes);
         updateSettingsMutation.mutate({ reminderTimes: newTimes });
 
-        await cancelDailyReminder(hour, minute);
+        if (reminderEnabled) {
+            await syncDailyReminders(true, newTimes);
+        } else {
+            await cancelDailyReminder(hour, minute);
+        }
         showToast('Reminder removed', 'success');
     };
 

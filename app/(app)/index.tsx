@@ -20,7 +20,7 @@ import { ICON } from '../../src/constants/Sizes';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
     useTransactions, useAccounts, useSettings,
-    useDueSubscriptions, useProcessSubscriptionPayment
+    useDueSubscriptions, useProcessSubscriptionPayment, usePeriodTotals
 } from '../../src/hooks/useData';
 import { useToast } from '../../src/providers/ToastProvider';
 import { useConfirm } from '../../src/providers/ConfirmProvider';
@@ -65,6 +65,7 @@ export default function TransactionsScreen() {
     const { data: accounts = [] } = useAccounts();
     const { data: settings } = useSettings();
     const { data: transactions = [], isLoading, refetch, isRefetching } = useTransactions(startDate, endDate, selectedAccountId);
+    const { data: periodTotals } = usePeriodTotals(startDate, endDate);
 
     const url = Linking.useURL();
 
@@ -93,14 +94,10 @@ export default function TransactionsScreen() {
     }, [transactions]);
 
     const currentPeriodTotals = useMemo(() => {
-        let income = 0;
-        let expense = 0;
-        transactions.forEach(t => {
-            if (t.type === 'income') income += t.amount;
-            else if (t.type === 'expense' || t.type === 'lend') expense += t.amount;
-        });
-        return { income, expense };
-    }, [transactions]);
+        if (periodTotals) return periodTotals;
+        // Fallback or early return if calculating
+        return { income: 0, expense: 0 };
+    }, [periodTotals]);
 
     const shiftPeriod = (delta: number) => {
         const newStart = new Date(startDate);
@@ -573,6 +570,7 @@ function DueAutopaySection({ activeColors, symbol }: { activeColors: any; symbol
     const [selectedSub, setSelectedSub] = useState<Subscription | null>(null);
     const [amount, setAmount] = useState('');
     const processPayment = useProcessSubscriptionPayment();
+    const { showToast } = useToast();
 
     const styles = getDueStyles(activeColors);
 
@@ -587,14 +585,15 @@ function DueAutopaySection({ activeColors, symbol }: { activeColors: any; symbol
         if (!selectedSub) return;
         const finalAmount = parseFloat(amount);
         if (isNaN(finalAmount)) {
-            Alert.alert('Error', 'Please enter a valid amount');
+            showToast('Please enter a valid amount', 'error');
             return;
         }
         try {
             await processPayment.mutateAsync({ subscription: selectedSub, actualAmount: finalAmount });
+            showToast('Payment processed successfully', 'success');
             setSelectedSub(null);
         } catch {
-            Alert.alert('Error', 'Failed to process payment');
+            showToast('Failed to process payment', 'error');
         }
     };
 

@@ -6,7 +6,7 @@ import { Colors } from '../../src/constants/Colors';
 import { useTheme } from '../../src/providers/ThemeContext';
 import TransactionModal from '../../src/components/TransactionModal';
 import { getCurrencySymbol } from '../../src/constants/Currency';
-import { useTransactions, useSettings } from '../../src/hooks/useData';
+import { useTransactions, useSettings, useDebtTotals, useNetBalances } from '../../src/hooks/useData';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FONT, ICON, BTN, RADIUS } from '../../src/constants/Sizes';
 
@@ -22,6 +22,8 @@ export default function LendBorrowScreen() {
 
     const { data: transactions = [], isLoading, refetch, isRefetching } = useTransactions();
     const { data: settings } = useSettings();
+    const { data: debtTotals } = useDebtTotals();
+    const { data: netBalances = [] } = useNetBalances();
 
     const symbol = getCurrencySymbol(settings?.baseCurrency);
 
@@ -36,31 +38,32 @@ export default function LendBorrowScreen() {
         return base;
     }, [transactions, statusFilter, personFilter]);
 
-    const totalBorrowed = useMemo(() =>
-        debts.filter(t => t.type === 'borrow' && !t.settledStatus).reduce((sum, t) => sum + t.amount, 0),
-        [debts]
-    );
+    const totalBorrowed = useMemo(() => {
+        if (personFilter) return debts.filter(t => t.type === 'borrow' && !t.settledStatus).reduce((sum, t) => sum + t.amount, 0);
+        return debtTotals?.borrowed || 0;
+    }, [debtTotals, debts, personFilter]);
 
-    const totalLent = useMemo(() =>
-        debts.filter(t => t.type === 'lend' && !t.settledStatus).reduce((sum, t) => sum + t.amount, 0),
-        [debts]
-    );
+    const totalLent = useMemo(() => {
+        if (personFilter) return debts.filter(t => t.type === 'lend' && !t.settledStatus).reduce((sum, t) => sum + t.amount, 0);
+        return debtTotals?.lent || 0;
+    }, [debtTotals, debts, personFilter]);
 
     const netList = useMemo(() => {
-        const netBalances = debts
-            .filter(t => !t.settledStatus && t.personName && t.personName !== 'Unknown')
-            .reduce((acc, t) => {
+        if (personFilter) {
+            const net = debts.reduce((acc, t) => {
+                if (t.settledStatus) return acc;
                 const name = t.personName!;
                 if (!acc[name]) acc[name] = 0;
                 acc[name] += t.type === 'lend' ? t.amount : -t.amount;
                 return acc;
             }, {} as Record<string, number>);
-
-        return Object.keys(netBalances)
-            .map(name => ({ name, amount: netBalances[name] }))
-            .filter(n => n.amount !== 0)
-            .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
-    }, [debts]);
+            return Object.keys(net)
+                .map(name => ({ name, amount: net[name] }))
+                .filter(n => n.amount !== 0)
+                .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+        }
+        return netBalances;
+    }, [netBalances, debts, personFilter]);
 
     const styles = getStyles(activeColors);
 

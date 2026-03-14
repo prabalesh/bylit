@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Detailed Accounts: Support for Bank Account types (Savings, Current, etc.) and Credit Card identification.
 - Future-Proofing: Transactions are now restricted to present and past only.
 - Scalability: Optimized data handling for large transaction histories.
+- Premium Sidebar: Redesigned menu with active route highlighting, Wealth Summary card, and Quick Action shortcuts.
 
 ### Changed
 - UI Overhaul: Complete redesign of the Settings page for a more premium experience.
