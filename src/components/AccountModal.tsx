@@ -31,6 +31,8 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
     const [type, setType] = useState('Bank');
     const [bankType, setBankType] = useState('Savings');
     const [isCreditCard, setIsCreditCard] = useState(false);
+    const [statementDay, setStatementDay] = useState('');
+    const [dueDay, setDueDay] = useState('');
     const [balance, setBalance] = useState('');
 
     const { data: settings } = useSettings();
@@ -55,12 +57,16 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             setType(account.type);
             setBankType(account.bankType || 'Savings');
             setIsCreditCard(!!account.isCreditCard);
+            setStatementDay(account.statementDay?.toString() || '');
+            setDueDay(account.dueDay?.toString() || '');
             setBalance(account.balance.toString());
         } else {
             setName('');
             setType('Bank');
             setBankType('Savings');
             setIsCreditCard(false);
+            setStatementDay('');
+            setDueDay('');
             setBalance('');
         }
     }, [account, visible]);
@@ -99,6 +105,8 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
             type: type as any,
             bankType: type === 'Bank' ? (bankType as any) : undefined,
             isCreditCard: type === 'Credit' || isCreditCard,
+            statementDay: type === 'Credit' ? parseInt(statementDay) || undefined : undefined,
+            dueDay: type === 'Credit' ? parseInt(dueDay) || undefined : undefined,
             balance: numBalance,
         }, {
             onSuccess: () => {
@@ -169,6 +177,35 @@ export default function AccountModal({ visible, onClose, account = null }: Accou
                                         </TouchableOpacity>
                                     ))}
                                 </ScrollView>
+                            </View>
+                        )}
+
+                        {type === 'Credit' && (
+                            <View style={{ flexDirection: 'row', gap: 12 }}>
+                                <View style={[styles.inputGroup, { flex: 1 }]}>
+                                    <Text style={styles.label}>Statement Day</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="1-31"
+                                        placeholderTextColor={activeColors.secondaryText + '50'}
+                                        keyboardType="numeric"
+                                        value={statementDay}
+                                        onChangeText={setStatementDay}
+                                        maxLength={2}
+                                    />
+                                </View>
+                                <View style={[styles.inputGroup, { flex: 1 }]}>
+                                    <Text style={styles.label}>Due Day</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="1-31"
+                                        placeholderTextColor={activeColors.secondaryText + '50'}
+                                        keyboardType="numeric"
+                                        value={dueDay}
+                                        onChangeText={setDueDay}
+                                        maxLength={2}
+                                    />
+                                </View>
                             </View>
                         )}
 

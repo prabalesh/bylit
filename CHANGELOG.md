@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased] - 2026-03-14
+- UI: Fixed overlapping income, expense, and remaining balance cards on the dashboard for smaller screens.
+- Notifications: Improved Multiple Daily Reminders UI in Settings and added automatic synchronization on app startup.
+- Documentation: Created a comprehensive [application-context.md](file:///home/neo/Desktop/Me/bylit/mobile/private-docs/application-context.md) in `private-docs`.
+- Credit Cards: Enhanced Account model to support **Statement Day** and **Due Day** for improved monthly billing tracking.
+
 All notable changes to this project will be documented in this file.
 
 ## [1.4.0] - 2026-03-14

@@ -32,6 +32,8 @@ export const initDB = async () => {
             currency TEXT NOT NULL DEFAULT 'INR',
             bank_type TEXT,
             is_credit_card INTEGER DEFAULT 0,
+            statement_day INTEGER,
+            due_day INTEGER,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
@@ -163,6 +165,8 @@ export const initDB = async () => {
         // Missing columns for transactions
         `ALTER TABLE transactions ADD COLUMN remaining_amount REAL`,
         `ALTER TABLE settings ADD COLUMN reminder_times TEXT`,
+        `ALTER TABLE accounts ADD COLUMN statement_day INTEGER`,
+        `ALTER TABLE accounts ADD COLUMN due_day INTEGER`,
     ];
     for (const stmt of migrateColumns) {
         try { await db.execAsync(stmt); } catch { /* column already exists */ }

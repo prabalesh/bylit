@@ -11,6 +11,8 @@ import { useTheme } from '../../src/providers/ThemeContext';
 import { useState, useRef, useEffect } from 'react';
 import Sidebar from '../../src/components/Sidebar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSettings } from '../../src/hooks/useData';
+import { syncDailyReminders } from '../../src/services/notifications';
 
 export default function AppLayout() {
     const insets = useSafeAreaInsets();
@@ -60,6 +62,15 @@ export default function AppLayout() {
             backdropAnim.setValue(0);
         }
     }, [isSidebarVisible]);
+
+    const { data: settings } = useSettings();
+
+    // Sync notifications on startup
+    useEffect(() => {
+        if (settings) {
+            syncDailyReminders(settings.reminderEnabled, settings.reminderTimes || []);
+        }
+    }, [settings]);
 
     return (
         <View style={{ flex: 1 }}>

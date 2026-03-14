@@ -9,6 +9,8 @@ export interface Account {
     type: 'Bank' | 'Cash' | 'Credit';
     bankType?: 'Savings' | 'Current' | 'Salary' | 'Fixed Deposit' | 'Other';
     isCreditCard?: boolean;
+    statementDay?: number; // 1-31
+    dueDay?: number; // 1-31
     balance: number;
     createdAt: string;
     updatedAt: string;

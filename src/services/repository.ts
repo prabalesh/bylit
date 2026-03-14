@@ -14,6 +14,8 @@ export class Repository {
             type: (row.type || 'Bank') as any,
             bankType: row.bank_type as any,
             isCreditCard: row.is_credit_card === 1,
+            statementDay: row.statement_day,
+            dueDay: row.due_day,
             balance: Number(row.balance) || 0,
             createdAt: String(row.updated_at || new Date().toISOString()),
             updatedAt: String(row.updated_at || new Date().toISOString())
@@ -24,14 +26,16 @@ export class Repository {
         const db = getDB();
         const id = account.id || generateId();
         await db.runAsync(
-            `INSERT OR REPLACE INTO accounts (id, name, type, bank_type, is_credit_card, balance, sync_status) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT OR REPLACE INTO accounts (id, name, type, bank_type, is_credit_card, statement_day, due_day, balance, sync_status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 account.name || '',
                 account.type || 'Bank',
                 account.bankType || null,
                 account.isCreditCard ? 1 : 0,
+                account.statementDay || null,
+                account.dueDay || null,
                 account.balance || 0,
                 'synced'
             ]

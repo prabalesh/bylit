@@ -297,8 +297,8 @@ export default function SettingsScreen() {
                                 <Bell color={activeColors.tint} size={18} />
                             </View>
                             <View>
-                                <Text style={styles.menuLabel}>Daily Expense Reminder</Text>
-                                <Text style={styles.menuSubLabel}>Get notified to log your daily spending</Text>
+                                <Text style={styles.menuLabel}>Daily Expense Reminders</Text>
+                                <Text style={styles.menuSubLabel}>Manage multiple daily tracking alerts</Text>
                             </View>
                         </View>
                         <Switch
@@ -308,6 +308,12 @@ export default function SettingsScreen() {
                             thumbColor={reminderEnabled ? activeColors.tint : activeColors.secondaryText}
                         />
                     </View>
+
+                    {reminderEnabled && reminderTimes.length > 0 && (
+                        <View style={styles.reminderInfo}>
+                            <Text style={styles.reminderInfoText}>Current Reminders:</Text>
+                        </View>
+                    )}
 
                     {/* Multiple Reminders List */}
                     {reminderTimes.map((time, index) => (

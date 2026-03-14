@@ -126,6 +126,11 @@ export default function AccountsScreen() {
                                         <View>
                                             <Text style={styles.accountType}>{item.type}</Text>
                                             <Text style={styles.accountName}>{item.name}</Text>
+                                            {item.type === 'Credit' && item.statementDay && (
+                                                <Text style={styles.billingCycle}>
+                                                    Cycle: {item.statementDay}th • Due: {item.dueDay}th
+                                                </Text>
+                                            )}
                                         </View>
                                     </View>
                                     <View style={styles.cardRight}>
@@ -275,6 +280,12 @@ const getStyles = (colors: any, insets: any) => StyleSheet.create({
         fontSize: 15,
         fontWeight: '700',
         color: colors.text,
+    },
+    billingCycle: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: colors.secondaryText,
+        marginTop: 2,
     },
     cardRight: {
         flexDirection: 'row',
