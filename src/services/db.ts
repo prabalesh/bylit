@@ -125,6 +125,8 @@ export const initDB = async () => {
             sync_status TEXT NOT NULL DEFAULT 'synced'
         );
 
+        CREATE INDEX IF NOT EXISTS idx_transactions_account_id_date ON transactions (account_id, date);
+        CREATE INDEX IF NOT EXISTS idx_transactions_to_account_id_date ON transactions (to_account_id, date);
     `);
 
     // Migrate existing settings table (safe no-op if columns already exist)

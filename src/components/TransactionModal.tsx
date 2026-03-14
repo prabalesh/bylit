@@ -403,6 +403,37 @@ export default function TransactionModal({ visible, onClose, transaction = null,
                                 </View>
                             )}
 
+                            {/* Category — only for expense and income */}
+                            {(type === 'expense' || type === 'income') && (
+                                <View style={styles.inputGroup}>
+                                    <View style={styles.labelRow}>
+                                        <Text style={styles.label}>Category</Text>
+                                        <TouchableOpacity onPress={() => setIsCategoryModalVisible(true)} style={styles.addCategoryBtn}>
+                                            <Plus size={12} color={activeColors.tint} />
+                                            <Text style={styles.addCategoryBtnText}>Manage</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                                        {relevantCategories.map((c: Category) => (
+                                            <TouchableOpacity
+                                                key={c.id}
+                                                style={[styles.chip, categoryId === c.id && styles.chipActive]}
+                                                onPress={() => {
+                                                    setCategoryId(c.id);
+                                                    if (errors.category) setErrors(prev => ({ ...prev, category: '' }));
+                                                }}
+                                            >
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                    {categoryId === c.id && <Check size={14} color={activeColors.tint} />}
+                                                    <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>{c.name}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                    {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
+                                </View>
+                            )}
+
                             {/* Person Name — only for lend/borrow */}
                             {isLendOrBorrow && (
                                 <View style={styles.inputGroup}>

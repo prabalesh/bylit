@@ -63,7 +63,29 @@ export class Repository {
             params.push(accountId, accountId);
         }
 
-        const query = `SELECT * FROM transactions ${whereClause} ORDER BY date DESC LIMIT ? OFFSET ?`;
+        const query = `
+            SELECT t.*, 
+            (
+                SELECT balance FROM accounts WHERE id = t.account_id
+            ) - IFNULL((
+                SELECT SUM(CASE 
+                    WHEN st.type IN ('expense', 'lend') THEN -st.amount 
+                    WHEN st.type IN ('income', 'borrow') THEN st.amount 
+                    WHEN st.type = 'transfer' AND st.account_id = t.account_id THEN -st.amount
+                    WHEN st.type = 'transfer' AND st.to_account_id = t.account_id THEN st.amount
+                    WHEN st.type = 'credit bill' AND st.account_id = t.account_id THEN -st.amount
+                    WHEN st.type = 'credit bill' AND st.to_account_id = t.account_id THEN st.amount
+                    ELSE 0 END) 
+                FROM transactions st
+                WHERE (st.account_id = t.account_id OR st.to_account_id = t.account_id) 
+                AND (st.date > t.date OR (st.date = t.date AND st.id > t.id))
+                AND st.sync_status != 'deleted'
+            ), 0) as balance_after
+            FROM transactions t 
+            ${whereClause.replace('WHERE', 'WHERE t.')} 
+            ORDER BY t.date DESC, t.id DESC 
+            LIMIT ? OFFSET ?
+        `;
         const results = await db.getAllAsync<any>(query, [...params, limit, offset]);
 
         // Fetch accounts to get names
@@ -98,6 +120,7 @@ export class Repository {
             dueDate: row.due_date ? String(row.due_date) : undefined,
             settledStatus: row.settled_status === 1,
             relatedId: row.related_id ? String(row.related_id) : undefined,
+            balanceAfter: row.balance_after !== undefined ? Number(row.balance_after) : undefined,
             createdAt: String(row.updated_at || new Date().toISOString()),
             updatedAt: String(row.updated_at || new Date().toISOString())
         };
